@@ -1,5 +1,8 @@
 import type { JsonSchema } from "./contracts";
 
+export const SCENARIO_NAME_PATTERN_SOURCE =
+  "^(?!\\s)(?![\\s\\S]*\\s$)[^\\u0000-\\u001F\\u007F]+$";
+
 const REQUEST_ID_PROPERTY = {
   type: "string" as const,
   description: "Unique idempotency key for this write request.",
@@ -48,6 +51,7 @@ export const CREATE_SCENARIO_SCHEMA = {
       description: "Human-readable scenario name.",
       minLength: 1,
       maxLength: 48,
+      pattern: SCENARIO_NAME_PATTERN_SOURCE,
     },
     factory_version_id: RESOURCE_ID_PROPERTY(
       "Immutable factory version used as the scenario base.",

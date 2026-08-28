@@ -10,10 +10,14 @@ const REGISTRY_KEY = Symbol.for("agentic-sandbox.webmcp.registration.v1");
 
 interface ActiveRegistration {
   active: boolean;
-  bus: FactoryCommandBus;
+  busRegistrations: BusRegistration[];
   controller: AbortController;
-  refs: number;
   ready: Promise<void>;
+}
+
+interface BusRegistration {
+  token: symbol;
+  bus: FactoryCommandBus;
 }
 
 type RegistrationRegistry = WeakMap<WebMcpModelContext, ActiveRegistration>;
@@ -48,6 +52,7 @@ function createCleanup(
   registry: RegistrationRegistry,
   modelContext: WebMcpModelContext,
   state: ActiveRegistration,
+  token: symbol,
 ): () => void {
   let cleaned = false;
 
@@ -61,8 +66,15 @@ function createCleanup(
       return;
     }
 
-    state.refs -= 1;
-    if (state.refs > 0) {
+    const registrationIndex = state.busRegistrations.findIndex(
+      (registration) => registration.token === token,
+    );
+    if (registrationIndex === -1) {
+      return;
+    }
+    state.busRegistrations.splice(registrationIndex, 1);
+
+    if (state.busRegistrations.length > 0) {
       return;
     }
 
@@ -91,28 +103,33 @@ export function registerFactoryWebMcpTools(
   const modelContext = candidate as WebMcpModelContext;
   const registry = getRegistry();
   const existing = registry.get(modelContext);
+  const token = Symbol("webmcp-bus-registration");
 
   if (existing?.active) {
-    existing.bus = bus;
-    existing.refs += 1;
+    existing.busRegistrations.push({ token, bus });
     return {
       supported: true,
       ready: existing.ready,
-      cleanup: createCleanup(registry, modelContext, existing),
+      cleanup: createCleanup(registry, modelContext, existing, token),
     };
   }
 
   const controller = new AbortController();
   const state: ActiveRegistration = {
     active: true,
-    bus,
+    busRegistrations: [{ token, bus }],
     controller,
-    refs: 1,
     ready: Promise.resolve(),
   };
   registry.set(modelContext, state);
 
-  const descriptors = createFactoryToolDescriptors(() => state.bus);
+  const descriptors = createFactoryToolDescriptors(() => {
+    const activeBus = state.busRegistrations.at(-1);
+    if (!activeBus) {
+      throw new Error("No active WebMCP command bus.");
+    }
+    return activeBus.bus;
+  });
   state.ready = Promise.all(
     descriptors.map((descriptor) =>
       Promise.resolve().then(() =>
@@ -137,6 +154,6 @@ export function registerFactoryWebMcpTools(
   return {
     supported: true,
     ready: state.ready,
-    cleanup: createCleanup(registry, modelContext, state),
+    cleanup: createCleanup(registry, modelContext, state, token),
   };
 }

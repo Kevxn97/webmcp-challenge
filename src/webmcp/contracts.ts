@@ -112,7 +112,7 @@ export interface FactoryCommandBus {
     input: CompareSimulationRunsInput,
     context: ToolExecutionContext,
   ): CommandOutcome | Promise<CommandOutcome>;
-  awaitVisibleCommit?(context: ToolExecutionContext): void | Promise<void>;
+  awaitVisibleCommit(context: ToolExecutionContext): void | Promise<void>;
 }
 
 export class FactoryCommandError extends Error {

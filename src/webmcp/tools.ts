@@ -150,44 +150,129 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   }
 }
 
-function isPlainJsonValue(
+type JsonCloneResult =
+  | { ok: true; value: JsonValue }
+  | { ok: false };
+
+const JSON_CLONE_FAILED: JsonCloneResult = { ok: false };
+
+function clonePlainJsonValue(
   value: unknown,
   ancestors = new Set<object>(),
   depth = 0,
-): value is JsonValue {
+): JsonCloneResult {
   if (depth > 64) {
-    return false;
+    return JSON_CLONE_FAILED;
   }
   if (
     value === null ||
     typeof value === "string" ||
     typeof value === "boolean"
   ) {
-    return true;
+    return { ok: true, value };
   }
   if (typeof value === "number") {
-    return Number.isFinite(value);
+    return Number.isFinite(value)
+      ? { ok: true, value }
+      : JSON_CLONE_FAILED;
   }
   if (typeof value !== "object" || ancestors.has(value)) {
-    return false;
+    return JSON_CLONE_FAILED;
   }
 
-  ancestors.add(value);
-  let result: boolean;
-  if (Array.isArray(value)) {
-    result = value.every((item) => isPlainJsonValue(item, ancestors, depth + 1));
-  } else if (
-    isPlainRecord(value) &&
-    Object.getOwnPropertySymbols(value).length === 0
-  ) {
-    result = Object.keys(value).every((key) =>
-      isPlainJsonValue(value[key], ancestors, depth + 1),
-    );
-  } else {
-    result = false;
+  try {
+    const array = Array.isArray(value);
+    const prototype = Object.getPrototypeOf(value) as unknown;
+    if (
+      (array && prototype !== Array.prototype && prototype !== null) ||
+      (!array && prototype !== Object.prototype && prototype !== null)
+    ) {
+      return JSON_CLONE_FAILED;
+    }
+
+    const keys = Reflect.ownKeys(value);
+    if (keys.some((key) => typeof key === "symbol")) {
+      return JSON_CLONE_FAILED;
+    }
+
+    ancestors.add(value);
+    try {
+      if (array) {
+        const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+        if (
+          !lengthDescriptor ||
+          !("value" in lengthDescriptor) ||
+          typeof lengthDescriptor.value !== "number" ||
+          !Number.isSafeInteger(lengthDescriptor.value) ||
+          lengthDescriptor.value < 0 ||
+          lengthDescriptor.enumerable ||
+          lengthDescriptor.configurable ||
+          keys.length !== lengthDescriptor.value + 1
+        ) {
+          return JSON_CLONE_FAILED;
+        }
+
+        const clone: JsonValue[] = [];
+        for (let index = 0; index < lengthDescriptor.value; index += 1) {
+          const itemDescriptor = Object.getOwnPropertyDescriptor(
+            value,
+            String(index),
+          );
+          if (
+            !itemDescriptor ||
+            !("value" in itemDescriptor) ||
+            !itemDescriptor.enumerable
+          ) {
+            return JSON_CLONE_FAILED;
+          }
+
+          const item = clonePlainJsonValue(
+            itemDescriptor.value,
+            ancestors,
+            depth + 1,
+          );
+          if (!item.ok) {
+            return JSON_CLONE_FAILED;
+          }
+          clone.push(item.value);
+        }
+
+        Object.freeze(clone);
+        return { ok: true, value: clone };
+      }
+
+      const clone: Record<string, JsonValue> = {};
+      for (const rawKey of keys) {
+        const key = rawKey as string;
+        if (key === "toJSON") {
+          return JSON_CLONE_FAILED;
+        }
+
+        const property = Object.getOwnPropertyDescriptor(value, key);
+        if (!property || !("value" in property) || !property.enumerable) {
+          return JSON_CLONE_FAILED;
+        }
+
+        const child = clonePlainJsonValue(property.value, ancestors, depth + 1);
+        if (!child.ok) {
+          return JSON_CLONE_FAILED;
+        }
+        Object.defineProperty(clone, key, {
+          value: child.value,
+          enumerable: true,
+          configurable: false,
+          writable: false,
+        });
+      }
+
+      Object.freeze(clone);
+      return { ok: true, value: clone };
+    } finally {
+      ancestors.delete(value);
+    }
+  } catch {
+    return JSON_CLONE_FAILED;
   }
-  ancestors.delete(value);
-  return result;
 }
 
 function isSafeMessage(value: unknown): value is string {
@@ -198,39 +283,81 @@ function normalizeOutcome(
   outcome: unknown,
   requestId: string | null,
 ): FactoryToolEnvelope | null {
-  if (!isPlainRecord(outcome)) {
+  const clonedOutcome = clonePlainJsonValue(outcome);
+  if (!clonedOutcome.ok || !isPlainRecord(clonedOutcome.value)) {
     return null;
   }
-  const allowedKeys = new Set(["status", "code", "message", "data"]);
-  if (Object.keys(outcome).some((key) => !allowedKeys.has(key))) {
+
+  const normalized = clonedOutcome.value;
+  const keys = Object.keys(normalized).sort();
+  if (keys.join("|") !== "code|data|message|status") {
     return null;
   }
   if (
-    (outcome.status !== "ok" && outcome.status !== "error") ||
-    typeof outcome.code !== "string" ||
-    !FACTORY_TOOL_CODE_SET.has(outcome.code as FactoryToolCode) ||
-    !isSafeMessage(outcome.message) ||
-    !isPlainJsonValue(outcome.data)
+    (normalized.status !== "ok" && normalized.status !== "error") ||
+    typeof normalized.code !== "string" ||
+    !FACTORY_TOOL_CODE_SET.has(normalized.code as FactoryToolCode) ||
+    !isSafeMessage(normalized.message)
   ) {
     return null;
   }
 
-  const code = outcome.code as FactoryToolCode;
+  const code = normalized.code as FactoryToolCode;
   if (
-    (outcome.status === "ok" && code !== "OK") ||
-    (outcome.status === "error" && code === "OK")
+    (normalized.status === "ok" && code !== "OK") ||
+    (normalized.status === "error" && code === "OK")
   ) {
     return null;
   }
 
-  return {
+  return buildEnvelope(
+    normalized.status,
+    code,
+    requestId,
+    normalized.message,
+    normalized.data as JsonValue,
+  );
+}
+
+function buildEnvelope(
+  status: "ok" | "error",
+  code: FactoryToolCode,
+  requestId: string | null,
+  message: string,
+  data: JsonValue,
+): FactoryToolEnvelope | null {
+  const clonedData = clonePlainJsonValue(data);
+  if (!clonedData.ok) {
+    return null;
+  }
+
+  const envelope: FactoryToolEnvelope = {
     schema_version: FACTORY_TOOL_SCHEMA_VERSION,
-    status: outcome.status,
+    status,
     code,
     request_id: requestId,
-    message: outcome.message,
-    data: outcome.data,
+    message,
+    data: clonedData.value,
   };
+  Object.freeze(envelope);
+
+  try {
+    return typeof JSON.stringify(envelope) === "string" ? envelope : null;
+  } catch {
+    return null;
+  }
+}
+
+function minimalInternalErrorEnvelope(requestId: string | null): FactoryToolEnvelope {
+  const envelope: FactoryToolEnvelope = {
+    schema_version: FACTORY_TOOL_SCHEMA_VERSION,
+    status: "error",
+    code: "INTERNAL_ERROR",
+    request_id: requestId,
+    message: "The operation could not be completed.",
+    data: null,
+  };
+  return Object.freeze(envelope);
 }
 
 function errorEnvelope(
@@ -239,14 +366,10 @@ function errorEnvelope(
   message: string,
   data: JsonValue = null,
 ): FactoryToolEnvelope {
-  return {
-    schema_version: FACTORY_TOOL_SCHEMA_VERSION,
-    status: "error",
-    code,
-    request_id: requestId,
-    message,
-    data,
-  };
+  return (
+    buildEnvelope("error", code, requestId, message, data) ??
+    minimalInternalErrorEnvelope(requestId)
+  );
 }
 
 function abortedEnvelope(requestId: string | null): FactoryToolEnvelope {
@@ -275,11 +398,24 @@ function expectedErrorEnvelope(
   requestId: string | null,
 ): FactoryToolEnvelope {
   try {
-    if (!isSafeMessage(error.publicMessage) || !isPlainJsonValue(error.data)) {
+    const runtimeCode = (error as { code?: unknown }).code;
+    const clonedData = clonePlainJsonValue(error.data);
+    if (
+      typeof runtimeCode !== "string" ||
+      runtimeCode === "OK" ||
+      !FACTORY_TOOL_CODE_SET.has(runtimeCode as FactoryToolCode) ||
+      !isSafeMessage(error.publicMessage) ||
+      !clonedData.ok
+    ) {
       return internalErrorEnvelope(requestId);
     }
 
-    return errorEnvelope(error.code, requestId, error.publicMessage, error.data);
+    return errorEnvelope(
+      runtimeCode as Exclude<FactoryToolCode, "OK">,
+      requestId,
+      error.publicMessage,
+      clonedData.value,
+    );
   } catch {
     return internalErrorEnvelope(requestId);
   }
@@ -356,7 +492,7 @@ function createDescriptor<TInput>(
           return internalErrorEnvelope(requestId);
         }
 
-        if (!spec.readOnly && envelope.status === "ok" && bus.awaitVisibleCommit) {
+        if (!spec.readOnly && envelope.status === "ok") {
           await bus.awaitVisibleCommit(context);
           if (signal.aborted) {
             return abortedEnvelope(requestId);

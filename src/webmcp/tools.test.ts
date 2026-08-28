@@ -102,6 +102,22 @@ describe("factory WebMCP schemas", () => {
       enum: [1],
     });
 
+    const create = descriptors.find((item) => item.name === "create_scenario");
+    const scenarioName = create?.inputSchema.properties.name;
+    expect(scenarioName).toMatchObject({
+      minLength: 1,
+      maxLength: 48,
+      pattern: expect.any(String),
+    });
+    if (!scenarioName || !("pattern" in scenarioName) || !scenarioName.pattern) {
+      throw new Error("Missing scenario-name pattern");
+    }
+    const namePattern = new RegExp(scenarioName.pattern, "u");
+    expect(namePattern.test("Scenario B")).toBe(true);
+    expect(namePattern.test(" Scenario B")).toBe(false);
+    expect(namePattern.test("Scenario B ")).toBe(false);
+    expect(namePattern.test("Scenario\nB")).toBe(false);
+
     expect(FACTORY_TOOL_NAMES.some((name) => /lock|unlock|force/.test(name))).toBe(false);
   });
 });
@@ -133,6 +149,30 @@ describe("factory WebMCP execution", () => {
     expect(bus.applyScenarioChanges).not.toHaveBeenCalled();
     expect(bus.awaitVisibleCommit).not.toHaveBeenCalled();
   });
+
+  it.each([" Scenario B", "Scenario B ", "Scenario\nB"])(
+    "keeps scenario-name runtime validation aligned with the schema for %j",
+    async (name) => {
+      const bus = makeBus();
+      const result = await descriptor("create_scenario", bus).execute(
+        {
+          request_id: "req.create.invalid-name",
+          name,
+          factory_version_id: "factory-v7",
+          expected_factory_revision: 7,
+          expected_lock_revision: 3,
+        },
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toMatchObject({
+        status: "error",
+        code: "VALIDATION_ERROR",
+      });
+      expect(bus.createScenario).not.toHaveBeenCalled();
+      expect(bus.awaitVisibleCommit).not.toHaveBeenCalled();
+    },
+  );
 
   it("waits for a visible UI commit before completing a successful write", async () => {
     let releaseVisibleCommit: (() => void) | undefined;
@@ -276,6 +316,151 @@ describe("factory WebMCP execution", () => {
     expect(JSON.stringify(thrown)).not.toContain(secret);
     expect(malformed).toMatchObject({ status: "error", code: "INTERNAL_ERROR" });
   });
+
+  it("rejects hidden toJSON and BigInt properties on objects and arrays", async () => {
+    const cases: Array<() => unknown> = [
+      () => {
+        const value = { visible: true };
+        Object.defineProperty(value, "toJSON", {
+          value: () => ({ transformed: true }),
+          enumerable: false,
+        });
+        return value;
+      },
+      () => {
+        const value = { visible: true };
+        Object.defineProperty(value, "hidden", {
+          value: 1n,
+          enumerable: false,
+        });
+        return value;
+      },
+      () => {
+        const value = [1, 2];
+        Object.defineProperty(value, "toJSON", {
+          value: () => ({ transformed: true }),
+          enumerable: false,
+        });
+        return value;
+      },
+      () => {
+        const value = [1, 2];
+        Object.defineProperty(value, "hidden", {
+          value: 1n,
+          enumerable: false,
+        });
+        return value;
+      },
+    ];
+
+    for (const createData of cases) {
+      const bus = makeBus({
+        getFactorySnapshot: vi.fn(async () => ({
+          ...OK_OUTCOME,
+          data: createData(),
+        })),
+      });
+      const result = await descriptor("get_factory_snapshot", bus).execute(
+        {},
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toMatchObject({
+        status: "error",
+        code: "INTERNAL_ERROR",
+      });
+      expect(() => JSON.stringify(result)).not.toThrow();
+    }
+  });
+
+  it("rejects accessors and symbol properties without invoking getters", async () => {
+    let getterCalls = 0;
+    const accessorValue: Record<string, unknown> = {};
+    Object.defineProperty(accessorValue, "dangerous", {
+      get: () => {
+        getterCalls += 1;
+        throw new Error("getter must never run");
+      },
+      enumerable: true,
+    });
+    const symbolValue = { visible: true } as Record<PropertyKey, unknown>;
+    symbolValue[Symbol("hidden")] = "not JSON";
+
+    for (const data of [accessorValue, symbolValue]) {
+      const bus = makeBus({
+        getFactorySnapshot: vi.fn(async () => ({ ...OK_OUTCOME, data })),
+      });
+      const result = await descriptor("get_factory_snapshot", bus).execute(
+        {},
+        { signal: new AbortController().signal },
+      );
+      expect(result).toMatchObject({
+        status: "error",
+        code: "INTERNAL_ERROR",
+      });
+    }
+
+    expect(getterCalls).toBe(0);
+  });
+
+  it("returns a frozen reconstructed JSON tree for valid bus data", async () => {
+    const source = { station: "packaging", samples: [950, 1000, 1050] };
+    const bus = makeBus({
+      getFactorySnapshot: vi.fn(async () => ({
+        ...OK_OUTCOME,
+        data: source,
+      })),
+    });
+    const result = await descriptor("get_factory_snapshot", bus).execute(
+      {},
+      { signal: new AbortController().signal },
+    );
+    const data = result.data as { station: string; samples: number[] };
+
+    expect(result).toMatchObject({ status: "ok", code: "OK" });
+    expect(data).not.toBe(source);
+    expect(data.samples).not.toBe(source.samples);
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.isFrozen(data)).toBe(true);
+    expect(Object.isFrozen(data.samples)).toBe(true);
+    expect(() => JSON.stringify(result)).not.toThrow();
+    expect(JSON.parse(JSON.stringify(result))).toMatchObject({
+      status: "ok",
+      data: source,
+    });
+  });
+
+  it.each(["OK", "NOT_A_FACTORY_CODE"])(
+    "maps a runtime FactoryCommandError code %s to INTERNAL_ERROR",
+    async (runtimeCode) => {
+      const invalidError = new FactoryCommandError(
+        "HUMAN_LOCKED",
+        "This message must not be trusted for an invalid code.",
+      );
+      Object.defineProperty(invalidError, "code", {
+        value: runtimeCode,
+        configurable: true,
+      });
+      const bus = makeBus({
+        applyScenarioChanges: vi.fn(async () => {
+          throw invalidError;
+        }),
+      });
+
+      const result = await descriptor("apply_scenario_changes", bus).execute(
+        VALID_APPLY_INPUT,
+        { signal: new AbortController().signal },
+      );
+
+      expect(result).toMatchObject({
+        status: "error",
+        code: "INTERNAL_ERROR",
+        message: "The operation could not be completed.",
+        data: null,
+      });
+      expect(bus.awaitVisibleCommit).not.toHaveBeenCalled();
+    },
+  );
 
   it("returns structured stale outcomes and skips the visible-write barrier", async () => {
     const bus = makeBus({

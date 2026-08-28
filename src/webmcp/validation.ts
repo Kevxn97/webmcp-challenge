@@ -7,6 +7,7 @@ import type {
   RunFactorySimulationInput,
   ScenarioChanges,
 } from "./contracts";
+import { SCENARIO_NAME_PATTERN_SOURCE } from "./schemas";
 
 export type ValidationResult<T> =
   | { ok: true; value: T }
@@ -16,6 +17,7 @@ const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
 const RESOURCE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/;
 const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/;
 const MAX_REVISION = 2_147_483_647;
+const SCENARIO_NAME_PATTERN = new RegExp(SCENARIO_NAME_PATTERN_SOURCE, "u");
 
 function valid<T>(value: T): ValidationResult<T> {
   return { ok: true, value };
@@ -188,9 +190,9 @@ export function validateCreateScenarioInput(
 
   if (
     typeof record.name !== "string" ||
-    record.name.length < 1 ||
-    record.name.length > 48 ||
-    record.name.trim() !== record.name ||
+    [...record.name].length < 1 ||
+    [...record.name].length > 48 ||
+    !SCENARIO_NAME_PATTERN.test(record.name) ||
     CONTROL_CHARACTER_PATTERN.test(record.name)
   ) {
     shape.issues.push(

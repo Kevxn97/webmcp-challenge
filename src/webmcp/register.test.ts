@@ -77,6 +77,57 @@ describe("registerFactoryWebMcpTools", () => {
     expect(signals[0]?.aborted).toBe(true);
   });
 
+  it("restores the previous bus when the newest registration cleans up first", async () => {
+    const busA = makeBus("A");
+    const busB = makeBus("B");
+    const { target, descriptors, signals } = makeTarget();
+    const first = registerFactoryWebMcpTools(busA, target);
+    const second = registerFactoryWebMcpTools(busB, target);
+    await Promise.all([first.ready, second.ready]);
+
+    const readFactory = descriptors.find(
+      (descriptor) => descriptor.name === "get_factory_snapshot",
+    );
+    await readFactory?.execute({}, { signal: new AbortController().signal });
+    expect(busB.getFactorySnapshot).toHaveBeenCalledOnce();
+
+    second.cleanup();
+    expect(signals[0]?.aborted).toBe(false);
+    const restored = await readFactory?.execute(
+      {},
+      { signal: new AbortController().signal },
+    );
+    expect(restored?.data).toEqual({ bus: "A" });
+    expect(busA.getFactorySnapshot).toHaveBeenCalledOnce();
+
+    first.cleanup();
+    expect(signals[0]?.aborted).toBe(true);
+  });
+
+  it("supports the normal StrictMode cleanup and re-registration lifecycle", async () => {
+    const bus = makeBus("strict");
+    const { target, descriptors, signals } = makeTarget();
+
+    const first = registerFactoryWebMcpTools(bus, target);
+    await first.ready;
+    first.cleanup();
+    expect(descriptors).toHaveLength(6);
+    expect(signals[0]?.aborted).toBe(true);
+
+    const second = registerFactoryWebMcpTools(bus, target);
+    await second.ready;
+    expect(descriptors).toHaveLength(12);
+    expect(signals[6]?.aborted).toBe(false);
+    expect(signals[6]).not.toBe(signals[0]);
+
+    const secondRead = descriptors[6];
+    await secondRead?.execute({}, { signal: new AbortController().signal });
+    expect(bus.getFactorySnapshot).toHaveBeenCalledOnce();
+
+    second.cleanup();
+    expect(signals[6]?.aborted).toBe(true);
+  });
+
   it("marks only inspection tools read-only and exposes no unsupported annotations", async () => {
     const { target, descriptors } = makeTarget();
     const registration = registerFactoryWebMcpTools(makeBus(), target);

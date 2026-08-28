@@ -7,17 +7,37 @@ import type {
   RunFactorySimulationInput,
   ScenarioChanges,
 } from "./contracts";
-import { SCENARIO_NAME_PATTERN_SOURCE } from "./schemas";
+import {
+  APPLY_SCENARIO_CHANGES_FIELDS,
+  COMPARE_RUN_IDS_CONSTRAINTS,
+  COMPARE_SIMULATION_RUNS_FIELDS,
+  CREATE_SCENARIO_FIELDS,
+  GET_FACTORY_SNAPSHOT_FIELDS,
+  GET_SCENARIO_SNAPSHOT_FIELDS,
+  PACKAGING_CALIBRATIONS,
+  PACKAGING_CHANGEOVER_MINUTES,
+  QUALITY_RATES_UNITS_PER_HOUR,
+  REQUEST_ID_CONSTRAINTS,
+  RESOURCE_ID_CONSTRAINTS,
+  REVISION_CONSTRAINTS,
+  RUN_FACTORY_SIMULATION_FIELDS,
+  SCENARIO_CHANGES_MIN_PROPERTIES,
+  SCENARIO_CHANGE_FIELDS,
+  SCENARIO_CHANGE_REQUIRED_FIELDS,
+  SCENARIO_NAME_CONSTRAINTS,
+  SIMULATION_HORIZON_SHIFTS,
+  SPEED_BPS_CONSTRAINTS,
+  SUPPLIER_MODES,
+  WAREHOUSE_DOCK_RATES_UNITS_PER_HOUR,
+} from "./contract-constants";
 
 export type ValidationResult<T> =
   | { ok: true; value: T }
   | { ok: false; issues: string[] };
 
-const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
-const RESOURCE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/;
-const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/;
-const MAX_REVISION = 2_147_483_647;
-const SCENARIO_NAME_PATTERN = new RegExp(SCENARIO_NAME_PATTERN_SOURCE, "u");
+const REQUEST_ID_PATTERN = new RegExp(REQUEST_ID_CONSTRAINTS.pattern, "u");
+const RESOURCE_ID_PATTERN = new RegExp(RESOURCE_ID_CONSTRAINTS.pattern, "u");
+const SCENARIO_NAME_PATTERN = new RegExp(SCENARIO_NAME_CONSTRAINTS.pattern, "u");
 
 function valid<T>(value: T): ValidationResult<T> {
   return { ok: true, value };
@@ -74,13 +94,17 @@ function validateShape(
 
 function validateRequestId(value: unknown, path: string, issues: string[]): void {
   if (typeof value !== "string" || !REQUEST_ID_PATTERN.test(value)) {
-    issues.push(`${path} must be a 1-64 character request identifier.`);
+    issues.push(
+      `${path} must be a ${REQUEST_ID_CONSTRAINTS.minLength}-${REQUEST_ID_CONSTRAINTS.maxLength} character request identifier.`,
+    );
   }
 }
 
 function validateResourceId(value: unknown, path: string, issues: string[]): void {
   if (typeof value !== "string" || !RESOURCE_ID_PATTERN.test(value)) {
-    issues.push(`${path} must be a 1-80 character resource identifier.`);
+    issues.push(
+      `${path} must be a ${RESOURCE_ID_CONSTRAINTS.minLength}-${RESOURCE_ID_CONSTRAINTS.maxLength} character resource identifier.`,
+    );
   }
 }
 
@@ -88,10 +112,12 @@ function validateRevision(value: unknown, path: string, issues: string[]): void 
   if (
     typeof value !== "number" ||
     !Number.isInteger(value) ||
-    value < 0 ||
-    value > MAX_REVISION
+    value < REVISION_CONSTRAINTS.minimum ||
+    value > REVISION_CONSTRAINTS.maximum
   ) {
-    issues.push(`${path} must be an integer from 0 to ${MAX_REVISION}.`);
+    issues.push(
+      `${path} must be an integer from ${REVISION_CONSTRAINTS.minimum} to ${REVISION_CONSTRAINTS.maximum}.`,
+    );
   }
 }
 
@@ -141,14 +167,22 @@ function validateStringEnum(
 export function validateGetFactorySnapshotInput(
   input: unknown,
 ): ValidationResult<GetFactorySnapshotInput> {
-  const shape = validateShape(input, [], []);
+  const shape = validateShape(
+    input,
+    GET_FACTORY_SNAPSHOT_FIELDS,
+    GET_FACTORY_SNAPSHOT_FIELDS,
+  );
   return shape.issues.length > 0 ? invalid(shape.issues) : valid({});
 }
 
 export function validateGetScenarioSnapshotInput(
   input: unknown,
 ): ValidationResult<GetScenarioSnapshotInput> {
-  const shape = validateShape(input, ["scenario_id"], ["scenario_id"]);
+  const shape = validateShape(
+    input,
+    GET_SCENARIO_SNAPSHOT_FIELDS,
+    GET_SCENARIO_SNAPSHOT_FIELDS,
+  );
   if (!shape.record) {
     return invalid(shape.issues);
   }
@@ -162,21 +196,22 @@ export function validateGetScenarioSnapshotInput(
 export function validateCreateScenarioInput(
   input: unknown,
 ): ValidationResult<CreateScenarioInput> {
-  const keys = [
-    "request_id",
-    "name",
-    "factory_version_id",
-    "expected_factory_revision",
-    "expected_lock_revision",
-  ] as const;
-  const shape = validateShape(input, keys, keys);
+  const shape = validateShape(
+    input,
+    CREATE_SCENARIO_FIELDS,
+    CREATE_SCENARIO_FIELDS,
+  );
   if (!shape.record) {
     return invalid(shape.issues);
   }
 
   const record = shape.record;
   validateRequestId(record.request_id, "input.request_id", shape.issues);
-  validateResourceId(record.factory_version_id, "input.factory_version_id", shape.issues);
+  validateResourceId(
+    record.factory_version_id,
+    "input.factory_version_id",
+    shape.issues,
+  );
   validateRevision(
     record.expected_factory_revision,
     "input.expected_factory_revision",
@@ -190,46 +225,49 @@ export function validateCreateScenarioInput(
 
   if (
     typeof record.name !== "string" ||
-    [...record.name].length < 1 ||
-    [...record.name].length > 48 ||
-    !SCENARIO_NAME_PATTERN.test(record.name) ||
-    CONTROL_CHARACTER_PATTERN.test(record.name)
+    [...record.name].length < SCENARIO_NAME_CONSTRAINTS.minLength ||
+    [...record.name].length > SCENARIO_NAME_CONSTRAINTS.maxLength ||
+    !SCENARIO_NAME_PATTERN.test(record.name)
   ) {
     shape.issues.push(
-      "input.name must be 1-48 characters with no surrounding whitespace or control characters.",
+      `input.name must be ${SCENARIO_NAME_CONSTRAINTS.minLength}-${SCENARIO_NAME_CONSTRAINTS.maxLength} characters with no surrounding whitespace or control characters.`,
     );
   }
 
   return shape.issues.length > 0
     ? invalid(shape.issues)
-    : valid(record as unknown as CreateScenarioInput);
+    : valid({
+        request_id: record.request_id as string,
+        name: record.name as string,
+        factory_version_id: record.factory_version_id as string,
+        expected_factory_revision: record.expected_factory_revision as number,
+        expected_lock_revision: record.expected_lock_revision as number,
+      });
 }
 
 function validateScenarioChanges(input: unknown): ValidationResult<ScenarioChanges> {
-  const keys = [
-    "mixer_speed_bps",
-    "packaging_speed_bps",
-    "packaging_changeover_minutes",
-    "packaging_calibration",
-    "supplier_mode",
-    "quality_rate_units_per_hour",
-    "warehouse_dock_units_per_hour",
-  ] as const;
-  const shape = validateShape(input, keys, [], "input.changes");
+  const shape = validateShape(
+    input,
+    SCENARIO_CHANGE_FIELDS,
+    SCENARIO_CHANGE_REQUIRED_FIELDS,
+    "input.changes",
+  );
   if (!shape.record) {
     return invalid(shape.issues);
   }
 
   const record = shape.record;
-  if (Object.keys(record).length === 0) {
-    shape.issues.push("input.changes must contain at least one setting.");
+  if (Object.keys(record).length < SCENARIO_CHANGES_MIN_PROPERTIES) {
+    shape.issues.push(
+      `input.changes must contain at least ${SCENARIO_CHANGES_MIN_PROPERTIES} setting.`,
+    );
   }
 
   if (hasOwn(record, "mixer_speed_bps")) {
     validateIntegerRange(
       record.mixer_speed_bps,
-      5_000,
-      15_000,
+      SPEED_BPS_CONSTRAINTS.minimum,
+      SPEED_BPS_CONSTRAINTS.maximum,
       "input.changes.mixer_speed_bps",
       shape.issues,
     );
@@ -237,8 +275,8 @@ function validateScenarioChanges(input: unknown): ValidationResult<ScenarioChang
   if (hasOwn(record, "packaging_speed_bps")) {
     validateIntegerRange(
       record.packaging_speed_bps,
-      5_000,
-      15_000,
+      SPEED_BPS_CONSTRAINTS.minimum,
+      SPEED_BPS_CONSTRAINTS.maximum,
       "input.changes.packaging_speed_bps",
       shape.issues,
     );
@@ -246,7 +284,7 @@ function validateScenarioChanges(input: unknown): ValidationResult<ScenarioChang
   if (hasOwn(record, "packaging_changeover_minutes")) {
     validateNumberEnum(
       record.packaging_changeover_minutes,
-      [15, 30, 45],
+      PACKAGING_CHANGEOVER_MINUTES,
       "input.changes.packaging_changeover_minutes",
       shape.issues,
     );
@@ -254,7 +292,7 @@ function validateScenarioChanges(input: unknown): ValidationResult<ScenarioChang
   if (hasOwn(record, "packaging_calibration")) {
     validateStringEnum(
       record.packaging_calibration,
-      ["standard", "enhanced"],
+      PACKAGING_CALIBRATIONS,
       "input.changes.packaging_calibration",
       shape.issues,
     );
@@ -262,7 +300,7 @@ function validateScenarioChanges(input: unknown): ValidationResult<ScenarioChang
   if (hasOwn(record, "supplier_mode")) {
     validateStringEnum(
       record.supplier_mode,
-      ["standard", "expedite"],
+      SUPPLIER_MODES,
       "input.changes.supplier_mode",
       shape.issues,
     );
@@ -270,7 +308,7 @@ function validateScenarioChanges(input: unknown): ValidationResult<ScenarioChang
   if (hasOwn(record, "quality_rate_units_per_hour")) {
     validateNumberEnum(
       record.quality_rate_units_per_hour,
-      [600, 700, 800, 900],
+      QUALITY_RATES_UNITS_PER_HOUR,
       "input.changes.quality_rate_units_per_hour",
       shape.issues,
     );
@@ -278,29 +316,62 @@ function validateScenarioChanges(input: unknown): ValidationResult<ScenarioChang
   if (hasOwn(record, "warehouse_dock_units_per_hour")) {
     validateNumberEnum(
       record.warehouse_dock_units_per_hour,
-      [800, 900, 1000],
+      WAREHOUSE_DOCK_RATES_UNITS_PER_HOUR,
       "input.changes.warehouse_dock_units_per_hour",
       shape.issues,
     );
   }
 
-  return shape.issues.length > 0
-    ? invalid(shape.issues)
-    : valid(record as unknown as ScenarioChanges);
+  if (shape.issues.length > 0) {
+    return invalid(shape.issues);
+  }
+
+  const changes: ScenarioChanges = {};
+  if (hasOwn(record, "mixer_speed_bps")) {
+    changes.mixer_speed_bps = record.mixer_speed_bps as number;
+  }
+  if (hasOwn(record, "packaging_speed_bps")) {
+    changes.packaging_speed_bps = record.packaging_speed_bps as number;
+  }
+  if (hasOwn(record, "packaging_changeover_minutes")) {
+    changes.packaging_changeover_minutes =
+      record.packaging_changeover_minutes as NonNullable<
+        ScenarioChanges["packaging_changeover_minutes"]
+      >;
+  }
+  if (hasOwn(record, "packaging_calibration")) {
+    changes.packaging_calibration = record.packaging_calibration as NonNullable<
+      ScenarioChanges["packaging_calibration"]
+    >;
+  }
+  if (hasOwn(record, "supplier_mode")) {
+    changes.supplier_mode = record.supplier_mode as NonNullable<
+      ScenarioChanges["supplier_mode"]
+    >;
+  }
+  if (hasOwn(record, "quality_rate_units_per_hour")) {
+    changes.quality_rate_units_per_hour =
+      record.quality_rate_units_per_hour as NonNullable<
+        ScenarioChanges["quality_rate_units_per_hour"]
+      >;
+  }
+  if (hasOwn(record, "warehouse_dock_units_per_hour")) {
+    changes.warehouse_dock_units_per_hour =
+      record.warehouse_dock_units_per_hour as NonNullable<
+        ScenarioChanges["warehouse_dock_units_per_hour"]
+      >;
+  }
+  return valid(changes);
 }
 
 export function validateApplyScenarioChangesInput(
   input: unknown,
 ): ValidationResult<ApplyScenarioChangesInput> {
-  const keys = [
-    "request_id",
-    "scenario_id",
-    "expected_factory_revision",
-    "expected_scenario_revision",
-    "expected_lock_revision",
-    "changes",
-  ] as const;
-  const shape = validateShape(input, keys, keys);
+  const shape = validateShape(
+    input,
+    APPLY_SCENARIO_CHANGES_FIELDS,
+    APPLY_SCENARIO_CHANGES_FIELDS,
+  );
   if (!shape.record) {
     return invalid(shape.issues);
   }
@@ -344,15 +415,11 @@ export function validateApplyScenarioChangesInput(
 export function validateRunFactorySimulationInput(
   input: unknown,
 ): ValidationResult<RunFactorySimulationInput> {
-  const keys = [
-    "request_id",
-    "scenario_id",
-    "expected_factory_revision",
-    "expected_scenario_revision",
-    "expected_lock_revision",
-    "horizon_shifts",
-  ] as const;
-  const shape = validateShape(input, keys, keys);
+  const shape = validateShape(
+    input,
+    RUN_FACTORY_SIMULATION_FIELDS,
+    RUN_FACTORY_SIMULATION_FIELDS,
+  );
   if (!shape.record) {
     return invalid(shape.issues);
   }
@@ -377,40 +444,65 @@ export function validateRunFactorySimulationInput(
   );
   validateNumberEnum(
     record.horizon_shifts,
-    [1],
+    SIMULATION_HORIZON_SHIFTS,
     "input.horizon_shifts",
     shape.issues,
   );
 
   return shape.issues.length > 0
     ? invalid(shape.issues)
-    : valid(record as unknown as RunFactorySimulationInput);
+    : valid({
+        request_id: record.request_id as string,
+        scenario_id: record.scenario_id as string,
+        expected_factory_revision: record.expected_factory_revision as number,
+        expected_scenario_revision: record.expected_scenario_revision as number,
+        expected_lock_revision: record.expected_lock_revision as number,
+        horizon_shifts: record.horizon_shifts as 1,
+      });
 }
 
 export function validateCompareSimulationRunsInput(
   input: unknown,
 ): ValidationResult<CompareSimulationRunsInput> {
-  const shape = validateShape(input, ["run_ids"], ["run_ids"]);
+  const shape = validateShape(
+    input,
+    COMPARE_SIMULATION_RUNS_FIELDS,
+    COMPARE_SIMULATION_RUNS_FIELDS,
+  );
   if (!shape.record) {
     return invalid(shape.issues);
   }
 
   const value = shape.record.run_ids;
-  if (!Array.isArray(value) || value.length < 2 || value.length > 4) {
-    shape.issues.push("input.run_ids must contain two to four run identifiers.");
+  if (
+    !Array.isArray(value) ||
+    value.length < COMPARE_RUN_IDS_CONSTRAINTS.minItems ||
+    value.length > COMPARE_RUN_IDS_CONSTRAINTS.maxItems
+  ) {
+    shape.issues.push(
+      `input.run_ids must contain ${COMPARE_RUN_IDS_CONSTRAINTS.minItems} to ${COMPARE_RUN_IDS_CONSTRAINTS.maxItems} run identifiers.`,
+    );
     return invalid(shape.issues);
   }
 
-  for (const [index, runId] of value.entries()) {
+  const runIds: string[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const runId = value[index];
     validateResourceId(runId, `input.run_ids[${index}]`, shape.issues);
+    if (typeof runId === "string") {
+      runIds.push(runId);
+    }
   }
-  if (new Set(value).size !== value.length) {
+  if (
+    COMPARE_RUN_IDS_CONSTRAINTS.uniqueItems &&
+    new Set(runIds).size !== runIds.length
+  ) {
     shape.issues.push("input.run_ids must not contain duplicates.");
   }
 
   return shape.issues.length > 0
     ? invalid(shape.issues)
-    : valid({ run_ids: value as string[] });
+    : valid({ run_ids: runIds });
 }
 
 export function extractRequestId(input: unknown): string | null {
@@ -418,7 +510,8 @@ export function extractRequestId(input: unknown): string | null {
     return null;
   }
 
-  return typeof input.request_id === "string" && REQUEST_ID_PATTERN.test(input.request_id)
+  return typeof input.request_id === "string" &&
+    REQUEST_ID_PATTERN.test(input.request_id)
     ? input.request_id
     : null;
 }

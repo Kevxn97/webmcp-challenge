@@ -1,35 +1,94 @@
-import type { JsonSchema } from "./contracts";
+import type { JsonSchema, JsonSchemaProperty } from "./contracts";
+import {
+  APPLY_SCENARIO_CHANGES_FIELDS,
+  COMPARE_RUN_IDS_CONSTRAINTS,
+  COMPARE_SIMULATION_RUNS_FIELDS,
+  CREATE_SCENARIO_FIELDS,
+  GET_FACTORY_SNAPSHOT_FIELDS,
+  GET_SCENARIO_SNAPSHOT_FIELDS,
+  PACKAGING_CALIBRATIONS,
+  PACKAGING_CHANGEOVER_MINUTES,
+  QUALITY_RATES_UNITS_PER_HOUR,
+  REQUEST_ID_CONSTRAINTS,
+  RESOURCE_ID_CONSTRAINTS,
+  REVISION_CONSTRAINTS,
+  RUN_FACTORY_SIMULATION_FIELDS,
+  SCENARIO_CHANGES_MIN_PROPERTIES,
+  SCENARIO_CHANGE_FIELDS,
+  SCENARIO_CHANGE_REQUIRED_FIELDS,
+  SCENARIO_NAME_CONSTRAINTS,
+  SIMULATION_HORIZON_SHIFTS,
+  SPEED_BPS_CONSTRAINTS,
+  SUPPLIER_MODES,
+  WAREHOUSE_DOCK_RATES_UNITS_PER_HOUR,
+} from "./contract-constants";
 
 export const SCENARIO_NAME_PATTERN_SOURCE =
-  "^(?!\\s)(?![\\s\\S]*\\s$)[^\\u0000-\\u001F\\u007F]+$";
+  SCENARIO_NAME_CONSTRAINTS.pattern;
 
 const REQUEST_ID_PROPERTY = {
   type: "string" as const,
   description: "Unique idempotency key for this write request.",
-  minLength: 1,
-  maxLength: 64,
-  pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+  ...REQUEST_ID_CONSTRAINTS,
 };
 
 const RESOURCE_ID_PROPERTY = (description: string) => ({
   type: "string" as const,
   description,
-  minLength: 1,
-  maxLength: 80,
-  pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$",
+  ...RESOURCE_ID_CONSTRAINTS,
 });
 
 const REVISION_PROPERTY = (description: string) => ({
   type: "integer" as const,
   description,
-  minimum: 0,
-  maximum: 2_147_483_647,
+  ...REVISION_CONSTRAINTS,
 });
+
+const SCENARIO_CHANGE_PROPERTIES = {
+  mixer_speed_bps: {
+    type: "integer",
+    description: "Mixer speed as basis points of baseline (10000 = 100%).",
+    ...SPEED_BPS_CONSTRAINTS,
+  },
+  packaging_speed_bps: {
+    type: "integer",
+    description: "Packaging speed as basis points of baseline (10000 = 100%).",
+    ...SPEED_BPS_CONSTRAINTS,
+  },
+  packaging_changeover_minutes: {
+    type: "integer",
+    description: "Packaging changeover duration in minutes.",
+    enum: PACKAGING_CHANGEOVER_MINUTES,
+  },
+  packaging_calibration: {
+    type: "string",
+    description: "Packaging calibration mode.",
+    enum: PACKAGING_CALIBRATIONS,
+  },
+  supplier_mode: {
+    type: "string",
+    description: "Supplier service mode.",
+    enum: SUPPLIER_MODES,
+  },
+  quality_rate_units_per_hour: {
+    type: "integer",
+    description: "Quality-gate inspection capacity in units per hour.",
+    enum: QUALITY_RATES_UNITS_PER_HOUR,
+  },
+  warehouse_dock_units_per_hour: {
+    type: "integer",
+    description: "Warehouse dock capacity in units per hour.",
+    enum: WAREHOUSE_DOCK_RATES_UNITS_PER_HOUR,
+  },
+} as const satisfies Record<
+  (typeof SCENARIO_CHANGE_FIELDS)[number],
+  JsonSchemaProperty
+>;
 
 export const GET_FACTORY_SNAPSHOT_SCHEMA = {
   type: "object",
   properties: {},
-  required: [],
+  required: GET_FACTORY_SNAPSHOT_FIELDS,
   additionalProperties: false,
 } as const satisfies JsonSchema;
 
@@ -38,7 +97,7 @@ export const GET_SCENARIO_SNAPSHOT_SCHEMA = {
   properties: {
     scenario_id: RESOURCE_ID_PROPERTY("Scenario identifier to inspect."),
   },
-  required: ["scenario_id"],
+  required: GET_SCENARIO_SNAPSHOT_FIELDS,
   additionalProperties: false,
 } as const satisfies JsonSchema;
 
@@ -49,9 +108,7 @@ export const CREATE_SCENARIO_SCHEMA = {
     name: {
       type: "string",
       description: "Human-readable scenario name.",
-      minLength: 1,
-      maxLength: 48,
-      pattern: SCENARIO_NAME_PATTERN_SOURCE,
+      ...SCENARIO_NAME_CONSTRAINTS,
     },
     factory_version_id: RESOURCE_ID_PROPERTY(
       "Immutable factory version used as the scenario base.",
@@ -63,13 +120,7 @@ export const CREATE_SCENARIO_SCHEMA = {
       "Human-lock revision observed before creating the scenario.",
     ),
   },
-  required: [
-    "request_id",
-    "name",
-    "factory_version_id",
-    "expected_factory_revision",
-    "expected_lock_revision",
-  ],
+  required: CREATE_SCENARIO_FIELDS,
   additionalProperties: false,
 } as const satisfies JsonSchema;
 
@@ -77,48 +128,10 @@ export const SCENARIO_CHANGES_SCHEMA = {
   type: "object",
   description:
     "Absolute scenario settings. Omitted settings remain unchanged; at least one setting is required.",
-  properties: {
-    mixer_speed_bps: {
-      type: "integer",
-      description: "Mixer speed as basis points of baseline (10000 = 100%).",
-      minimum: 5_000,
-      maximum: 15_000,
-    },
-    packaging_speed_bps: {
-      type: "integer",
-      description: "Packaging speed as basis points of baseline (10000 = 100%).",
-      minimum: 5_000,
-      maximum: 15_000,
-    },
-    packaging_changeover_minutes: {
-      type: "integer",
-      description: "Packaging changeover duration in minutes.",
-      enum: [15, 30, 45],
-    },
-    packaging_calibration: {
-      type: "string",
-      description: "Packaging calibration mode.",
-      enum: ["standard", "enhanced"],
-    },
-    supplier_mode: {
-      type: "string",
-      description: "Supplier service mode.",
-      enum: ["standard", "expedite"],
-    },
-    quality_rate_units_per_hour: {
-      type: "integer",
-      description: "Quality-gate inspection capacity in units per hour.",
-      enum: [600, 700, 800, 900],
-    },
-    warehouse_dock_units_per_hour: {
-      type: "integer",
-      description: "Warehouse dock capacity in units per hour.",
-      enum: [800, 900, 1000],
-    },
-  },
-  required: [],
+  properties: SCENARIO_CHANGE_PROPERTIES,
+  required: SCENARIO_CHANGE_REQUIRED_FIELDS,
   additionalProperties: false,
-  minProperties: 1,
+  minProperties: SCENARIO_CHANGES_MIN_PROPERTIES,
 } as const satisfies JsonSchema & { description: string };
 
 export const APPLY_SCENARIO_CHANGES_SCHEMA = {
@@ -137,14 +150,7 @@ export const APPLY_SCENARIO_CHANGES_SCHEMA = {
     ),
     changes: SCENARIO_CHANGES_SCHEMA,
   },
-  required: [
-    "request_id",
-    "scenario_id",
-    "expected_factory_revision",
-    "expected_scenario_revision",
-    "expected_lock_revision",
-    "changes",
-  ],
+  required: APPLY_SCENARIO_CHANGES_FIELDS,
   additionalProperties: false,
 } as const satisfies JsonSchema;
 
@@ -165,17 +171,10 @@ export const RUN_FACTORY_SIMULATION_SCHEMA = {
     horizon_shifts: {
       type: "integer",
       description: "One deterministic 16-hour simulation shift (64 ticks).",
-      enum: [1],
+      enum: SIMULATION_HORIZON_SHIFTS,
     },
   },
-  required: [
-    "request_id",
-    "scenario_id",
-    "expected_factory_revision",
-    "expected_scenario_revision",
-    "expected_lock_revision",
-    "horizon_shifts",
-  ],
+  required: RUN_FACTORY_SIMULATION_FIELDS,
   additionalProperties: false,
 } as const satisfies JsonSchema;
 
@@ -186,11 +185,9 @@ export const COMPARE_SIMULATION_RUNS_SCHEMA = {
       type: "array",
       description: "Two to four simulation run identifiers to compare.",
       items: RESOURCE_ID_PROPERTY("Simulation run identifier."),
-      minItems: 2,
-      maxItems: 4,
-      uniqueItems: true,
+      ...COMPARE_RUN_IDS_CONSTRAINTS,
     },
   },
-  required: ["run_ids"],
+  required: COMPARE_SIMULATION_RUNS_FIELDS,
   additionalProperties: false,
 } as const satisfies JsonSchema;

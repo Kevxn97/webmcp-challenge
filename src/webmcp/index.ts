@@ -1,3 +1,4 @@
+export * from "./contract-constants";
 export * from "./contracts";
 export * from "./register";
 export * from "./schemas";

@@ -199,6 +199,8 @@ function clonePlainJsonValue(
     try {
       if (array) {
         const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+        const toJsonDescriptor = Object.getOwnPropertyDescriptor(value, "toJSON");
+        const hasSafeToJsonMask = Boolean(toJsonDescriptor);
         if (
           !lengthDescriptor ||
           !("value" in lengthDescriptor) ||
@@ -207,7 +209,14 @@ function clonePlainJsonValue(
           lengthDescriptor.value < 0 ||
           lengthDescriptor.enumerable ||
           lengthDescriptor.configurable ||
-          keys.length !== lengthDescriptor.value + 1
+          (toJsonDescriptor &&
+            (!("value" in toJsonDescriptor) ||
+              toJsonDescriptor.value !== undefined ||
+              toJsonDescriptor.enumerable ||
+              toJsonDescriptor.configurable ||
+              toJsonDescriptor.writable)) ||
+          keys.length !==
+            lengthDescriptor.value + 1 + (hasSafeToJsonMask ? 1 : 0)
         ) {
           return JSON_CLONE_FAILED;
         }
@@ -237,7 +246,14 @@ function clonePlainJsonValue(
           clone.push(item.value);
         }
 
-        Object.setPrototypeOf(clone, null);
+        // Keep standard array iteration/methods while shadowing any inherited
+        // Array/Object prototype serializer before freezing the JSON value.
+        Object.defineProperty(clone, "toJSON", {
+          value: undefined,
+          enumerable: false,
+          configurable: false,
+          writable: false,
+        });
         Object.freeze(clone);
         return { ok: true, value: clone };
       }
@@ -480,27 +496,12 @@ function createDescriptor<TInput>(
       }
 
       const context: ToolExecutionContext = { signal, source: "webmcp" };
+      let bus: FactoryCommandBus;
+      let rawOutcome: unknown;
 
       try {
-        const bus = getBus();
-        const rawOutcome = await spec.invoke(bus, validation.value, context);
-        if (signal.aborted) {
-          return abortedEnvelope(requestId);
-        }
-
-        const envelope = normalizeOutcome(rawOutcome, requestId);
-        if (!envelope) {
-          return internalErrorEnvelope(requestId);
-        }
-
-        if (!spec.readOnly && envelope.status === "ok") {
-          await bus.awaitVisibleCommit(context);
-          if (signal.aborted) {
-            return abortedEnvelope(requestId);
-          }
-        }
-
-        return envelope;
+        bus = getBus();
+        rawOutcome = await spec.invoke(bus, validation.value, context);
       } catch (error) {
         if (signal.aborted || isAbortError(error)) {
           return abortedEnvelope(requestId);
@@ -510,6 +511,25 @@ function createDescriptor<TInput>(
         }
         return internalErrorEnvelope(requestId);
       }
+
+      const envelope = normalizeOutcome(rawOutcome, requestId);
+      if (!envelope) {
+        return internalErrorEnvelope(requestId);
+      }
+
+      if (!spec.readOnly && envelope.status === "ok") {
+        // The atomic command bus owns cancellation until it resolves. Once it
+        // returns OK, domain state is committed: the visibility barrier is
+        // still mandatory and awaited, but a later abort or render failure
+        // must never rewrite that committed outcome as ABORTED/INTERNAL_ERROR.
+        try {
+          await bus.awaitVisibleCommit(context);
+        } catch {
+          // Committed domain outcome wins; UI recovery can occur separately.
+        }
+      }
+
+      return envelope;
     },
   };
 }

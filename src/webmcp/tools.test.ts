@@ -209,6 +209,60 @@ describe("factory WebMCP execution", () => {
     });
   });
 
+  it("keeps committed success when cancellation aborts the visibility barrier", async () => {
+    const controller = new AbortController();
+    const bus = makeBus({
+      applyScenarioChanges: vi.fn(async () => OK_OUTCOME),
+      awaitVisibleCommit: vi.fn(
+        ({ signal }) =>
+          new Promise<void>((_resolve, reject) => {
+            const rejectAsAborted = () =>
+              reject(new DOMException("Visibility wait aborted", "AbortError"));
+            if (signal.aborted) {
+              rejectAsAborted();
+            } else {
+              signal.addEventListener("abort", rejectAsAborted, { once: true });
+            }
+          }),
+      ),
+    });
+    const execution = descriptor("apply_scenario_changes", bus).execute(
+      VALID_APPLY_INPUT,
+      { signal: controller.signal },
+    );
+    await vi.waitFor(() => expect(bus.awaitVisibleCommit).toHaveBeenCalledOnce());
+
+    controller.abort();
+
+    await expect(execution).resolves.toMatchObject({
+      status: "ok",
+      code: "OK",
+      request_id: "req.apply.1",
+    });
+  });
+
+  it("keeps committed success when the visibility barrier rejects", async () => {
+    const bus = makeBus({
+      applyScenarioChanges: vi.fn(async () => OK_OUTCOME),
+      awaitVisibleCommit: vi.fn(async () => {
+        throw new Error("React commit observation failed");
+      }),
+    });
+
+    const result = await descriptor("apply_scenario_changes", bus).execute(
+      VALID_APPLY_INPUT,
+      { signal: new AbortController().signal },
+    );
+
+    expect(bus.applyScenarioChanges).toHaveBeenCalledOnce();
+    expect(bus.awaitVisibleCommit).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({
+      status: "ok",
+      code: "OK",
+      request_id: "req.apply.1",
+    });
+  });
+
   it("returns ABORTED without calling the bus when the signal is already aborted", async () => {
     const bus = makeBus();
     const tool = descriptor("run_factory_simulation", bus);
@@ -424,6 +478,13 @@ describe("factory WebMCP execution", () => {
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(data)).toBe(true);
     expect(Object.isFrozen(data.samples)).toBe(true);
+    expect([...data.samples]).toEqual([950, 1000, 1050]);
+    expect(data.samples.map((sample) => sample + 1)).toEqual([951, 1001, 1051]);
+    expect(Object.getPrototypeOf(data.samples)).toBe(Array.prototype);
+    expect(Object.getOwnPropertyDescriptor(data.samples, "toJSON")).toMatchObject({
+      value: undefined,
+      enumerable: false,
+    });
     expect(() => JSON.stringify(result)).not.toThrow();
     expect(JSON.parse(JSON.stringify(result))).toMatchObject({
       status: "ok",
@@ -516,7 +577,16 @@ describe("factory WebMCP execution", () => {
     expect(success.data?.throughput_band).toEqual([900, 950, 1000]);
     expect(Array.isArray(liveData.throughput_band)).toBe(true);
     expect(Object.getPrototypeOf(successData as object)).toBeNull();
-    expect(Object.getPrototypeOf(liveData.throughput_band as object)).toBeNull();
+    expect(Object.getPrototypeOf(liveData.throughput_band as object)).toBe(
+      Array.prototype,
+    );
+    const liveBand = liveData.throughput_band as number[];
+    expect([...liveBand]).toEqual([900, 950, 1000]);
+    expect(liveBand.map((value) => value / 10)).toEqual([90, 95, 100]);
+    expect(Object.getOwnPropertyDescriptor(liveBand, "toJSON")).toMatchObject({
+      value: undefined,
+      enumerable: false,
+    });
     expect(error).toMatchObject({ status: "error", code: "INTERNAL_ERROR" });
   });
 

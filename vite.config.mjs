@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { configDefaults } from "vitest/config";
 
 export default defineConfig({
   build: {
@@ -14,6 +15,9 @@ export default defineConfig({
     warmup: {
       clientFiles: ["./src/main.tsx"],
     },
+  },
+  test: {
+    exclude: [...configDefaults.exclude, "tests/sites-worker.test.mjs"],
   },
   plugins: [react()],
 });

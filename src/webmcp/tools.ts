@@ -125,7 +125,7 @@ const COMPARE_SIMULATION_RUNS_SPEC: FactoryToolSpec<CompareSimulationRunsInput> 
   name: "compare_simulation_runs",
   title: "Compare simulation receipts",
   description:
-    "Compare two to four stored simulation receipts, including feasibility, constraint evidence, source revisions, and whether each source is still current. This does not change state.",
+    "Compare two to four stored deterministic receipts with output, defect, and cost deltas plus feasibility and exact constraint operands. This does not change state.",
   inputSchema: COMPARE_SIMULATION_RUNS_SCHEMA,
   readOnly: true,
   getRequestId: null,

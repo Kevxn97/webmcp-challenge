@@ -26,7 +26,6 @@ import {
   RUN_FACTORY_SIMULATION_SCHEMA,
 } from "./schemas";
 import {
-  extractRequestId,
   validateApplyScenarioChangesInput,
   validateCompareSimulationRunsInput,
   validateCreateScenarioInput,
@@ -53,6 +52,7 @@ interface FactoryToolSpec<TInput> {
   description: string;
   inputSchema: JsonSchema;
   readOnly: boolean;
+  getRequestId: ((input: TInput) => string) | null;
   validate(input: unknown): ValidationResult<TInput>;
   invoke(
     bus: FactoryCommandBus,
@@ -68,6 +68,7 @@ const GET_FACTORY_SNAPSHOT_SPEC: FactoryToolSpec<GetFactorySnapshotInput> = {
     "Read the current immutable factory version, live revision, human locks, stations, baseline metrics, and constraint brief. This does not change state.",
   inputSchema: GET_FACTORY_SNAPSHOT_SCHEMA,
   readOnly: true,
+  getRequestId: null,
   validate: validateGetFactorySnapshotInput,
   invoke: (bus, input, context) => bus.getFactorySnapshot(input, context),
 };
@@ -79,6 +80,7 @@ const GET_SCENARIO_SNAPSHOT_SPEC: FactoryToolSpec<GetScenarioSnapshotInput> = {
     "Read one scenario, its absolute changes, source revisions, staleness state, and latest simulation receipt. This does not change state.",
   inputSchema: GET_SCENARIO_SNAPSHOT_SCHEMA,
   readOnly: true,
+  getRequestId: null,
   validate: validateGetScenarioSnapshotInput,
   invoke: (bus, input, context) => bus.getScenarioSnapshot(input, context),
 };
@@ -90,6 +92,7 @@ const CREATE_SCENARIO_SPEC: FactoryToolSpec<CreateScenarioInput> = {
     "Create a named scenario from the specified immutable factory version. Fails closed if the factory or human-lock revision changed. This writes local planning state but never changes human locks.",
   inputSchema: CREATE_SCENARIO_SCHEMA,
   readOnly: false,
+  getRequestId: (input) => input.request_id,
   validate: validateCreateScenarioInput,
   invoke: (bus, input, context) => bus.createScenario(input, context),
 };
@@ -101,6 +104,7 @@ const APPLY_SCENARIO_CHANGES_SPEC: FactoryToolSpec<ApplyScenarioChangesInput> = 
     "Atomically apply absolute operating settings to a scenario. Fails closed on stale factory, scenario, or lock revisions and when a human-locked resource would change. This never overrides or edits human locks.",
   inputSchema: APPLY_SCENARIO_CHANGES_SCHEMA,
   readOnly: false,
+  getRequestId: (input) => input.request_id,
   validate: validateApplyScenarioChangesInput,
   invoke: (bus, input, context) => bus.applyScenarioChanges(input, context),
 };
@@ -112,6 +116,7 @@ const RUN_FACTORY_SIMULATION_SPEC: FactoryToolSpec<RunFactorySimulationInput> = 
     "Run and store a deterministic receipt for one 16-hour, 64-tick factory shift. Fails closed on stale factory, scenario, or human-lock revisions.",
   inputSchema: RUN_FACTORY_SIMULATION_SCHEMA,
   readOnly: false,
+  getRequestId: (input) => input.request_id,
   validate: validateRunFactorySimulationInput,
   invoke: (bus, input, context) => bus.runFactorySimulation(input, context),
 };
@@ -123,6 +128,7 @@ const COMPARE_SIMULATION_RUNS_SPEC: FactoryToolSpec<CompareSimulationRunsInput> 
     "Compare two to four stored simulation receipts, including feasibility, constraint evidence, source revisions, and whether each source is still current. This does not change state.",
   inputSchema: COMPARE_SIMULATION_RUNS_SCHEMA,
   readOnly: true,
+  getRequestId: null,
   validate: validateCompareSimulationRunsInput,
   invoke: (bus, input, context) => bus.compareSimulationRuns(input, context),
 };
@@ -460,19 +466,8 @@ function createDescriptor<TInput>(
       untrustedContentHint: true,
     },
     execute: async (input, { signal }) => {
-      let requestId: string | null = null;
-      try {
-        requestId = spec.readOnly ? null : extractRequestId(input);
-      } catch {
-        return errorEnvelope(
-          "VALIDATION_ERROR",
-          null,
-          "The tool input did not match the required contract.",
-          { issues: ["input must be a readable plain JSON object."] },
-        );
-      }
       if (signal.aborted) {
-        return abortedEnvelope(requestId);
+        return abortedEnvelope(null);
       }
 
       let validation: ValidationResult<TInput>;
@@ -481,7 +476,7 @@ function createDescriptor<TInput>(
       } catch {
         return errorEnvelope(
           "VALIDATION_ERROR",
-          requestId,
+          null,
           "The tool input did not match the required contract.",
           { issues: ["input must be a readable plain JSON object."] },
         );
@@ -489,10 +484,22 @@ function createDescriptor<TInput>(
       if (!validation.ok) {
         return errorEnvelope(
           "VALIDATION_ERROR",
-          requestId,
+          null,
           "The tool input did not match the required contract.",
           { issues: validation.issues },
         );
+      }
+
+      let requestId: string | null;
+      try {
+        // The validator owns the sole raw-input snapshot. Request correlation
+        // is derived only from that frozen DTO, never by rereading raw input.
+        requestId = spec.getRequestId?.(validation.value) ?? null;
+      } catch {
+        return internalErrorEnvelope(null);
+      }
+      if (signal.aborted) {
+        return abortedEnvelope(requestId);
       }
 
       const context: ToolExecutionContext = { signal, source: "webmcp" };

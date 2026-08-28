@@ -684,21 +684,3 @@ export function validateCompareSimulationRunsInput(
     ? invalid(shape.issues)
     : valid(frozen({ run_ids: frozen(runIds) }));
 }
-
-export function extractRequestId(input: unknown): string | null {
-  if (!isPlainRecord(input)) {
-    return null;
-  }
-
-  try {
-    const descriptor = Object.getOwnPropertyDescriptor(input, "request_id");
-    return descriptor &&
-      "value" in descriptor &&
-      descriptor.enumerable === true &&
-      isValidRequestId(descriptor.value)
-      ? descriptor.value
-      : null;
-  } catch {
-    return null;
-  }
-}

@@ -143,7 +143,7 @@ describe("factory WebMCP execution", () => {
       schema_version: "factory-tools/v1",
       status: "error",
       code: "VALIDATION_ERROR",
-      request_id: "req.apply.1",
+      request_id: null,
     });
     const validationData = result.data as { issues?: unknown };
     expect(Array.isArray(validationData.issues)).toBe(true);
@@ -169,6 +169,7 @@ describe("factory WebMCP execution", () => {
       expect(result).toMatchObject({
         status: "error",
         code: "VALIDATION_ERROR",
+        request_id: null,
       });
       expect(bus.createScenario).not.toHaveBeenCalled();
       expect(bus.awaitVisibleCommit).not.toHaveBeenCalled();
@@ -206,6 +207,56 @@ describe("factory WebMCP execution", () => {
       status: "ok",
       code: "OK",
       request_id: "req.apply.1",
+    });
+  });
+
+  it("correlates the bus DTO and envelope from one request-id descriptor snapshot", async () => {
+    const source = {
+      ...VALID_APPLY_INPUT,
+      changes: { ...VALID_APPLY_INPUT.changes },
+    };
+    let requestIdDescriptorReads = 0;
+    const varyingInput = new Proxy(source, {
+      getOwnPropertyDescriptor(target, key) {
+        const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+        if (key !== "request_id" || !descriptor || !("value" in descriptor)) {
+          return descriptor;
+        }
+        requestIdDescriptorReads += 1;
+        return {
+          ...descriptor,
+          value:
+            requestIdDescriptorReads === 1
+              ? "req.proxy.snapshot"
+              : "req.proxy.changed",
+        };
+      },
+    });
+    let receivedInput: Parameters<FactoryCommandBus["applyScenarioChanges"]>[0]
+      | undefined;
+    const bus = makeBus({
+      applyScenarioChanges: vi.fn(async (input) => {
+        receivedInput = input;
+        return OK_OUTCOME;
+      }),
+    });
+
+    const result = await descriptor("apply_scenario_changes", bus).execute(
+      varyingInput,
+      { signal: new AbortController().signal },
+    );
+
+    expect(requestIdDescriptorReads).toBe(1);
+    if (!receivedInput) {
+      throw new Error("The command bus did not receive the validated DTO.");
+    }
+    expect(receivedInput.request_id).toBe("req.proxy.snapshot");
+    expect(Object.isFrozen(receivedInput)).toBe(true);
+    expect(Object.isFrozen(receivedInput.changes)).toBe(true);
+    expect(result).toMatchObject({
+      status: "ok",
+      code: "OK",
+      request_id: "req.proxy.snapshot",
     });
   });
 
@@ -284,7 +335,7 @@ describe("factory WebMCP execution", () => {
     expect(result).toMatchObject({
       status: "error",
       code: "ABORTED",
-      request_id: "req.run.1",
+      request_id: null,
     });
     expect(bus.runFactorySimulation).not.toHaveBeenCalled();
     expect(bus.awaitVisibleCommit).not.toHaveBeenCalled();
@@ -307,7 +358,7 @@ describe("factory WebMCP execution", () => {
     expect(result).toMatchObject({
       status: "error",
       code: "VALIDATION_ERROR",
-      request_id: "req.run.multi",
+      request_id: null,
     });
     expect(bus.runFactorySimulation).not.toHaveBeenCalled();
   });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { createBaselineInput, simulateFactory } from "../domain";
 import { SandboxCommandError, SandboxStore, type ScenarioPatch } from "./store";
 import { createBlueprintViewModel } from "./viewModel";
 
@@ -39,6 +40,7 @@ describe("SandboxStore", () => {
     expect(state.lockRevision).toBe(1);
     expect(view.scenarios.find((scenario) => scenario.marker === "A")?.status).toBe("STALE");
     expect(view.scenarios.find((scenario) => scenario.marker === "B")?.status).toBe("STALE");
+    expect(view.scenarios.find((scenario) => scenario.marker === "B")?.engineVersion).toBe("factory-engine/1.0.0");
     expect(view.checks.find((check) => check.id === "COST_8")?.scenarioAPass).toBe(false);
     expect(view.checks.every((check) => check.scenarioBPass === true)).toBe(true);
   });
@@ -199,6 +201,57 @@ describe("SandboxStore", () => {
       good_output_upper_bound: 9_252,
       target_good_output_units: 10_937,
     });
+
+    const proofView = createBlueprintViewModel(store.getSnapshot())
+      .scenarios.find((scenario) => scenario.id === created.scenario_id)?.infeasibilityProof;
+    expect(proofView).toEqual(expect.objectContaining({
+      proofVersion: "factory-lock-upper-bound/v1",
+      goodOutputUpperBound: 9_252,
+      targetGoodOutputUnits: 10_937,
+      exactInequality: "9252 < 10937",
+      proven: true,
+      sourceCurrent: true,
+    }));
+  });
+
+  it("keeps unproven upper bounds and old lock receipts non-conclusive in the view model", async () => {
+    const input = createBaselineInput();
+    input.operations = [
+      { operationId: "high-capacity-mixer", tick: 0, actor: "model", kind: "SET_MIXER_SPEED", valueBps: 10_000 },
+      { operationId: "high-capacity-packaging", tick: 0, actor: "model", kind: "SET_PACKAGING_SPEED", valueBps: 10_000 },
+      { operationId: "high-capacity-changeover", tick: 0, actor: "model", kind: "SET_CHANGEOVER_MINUTES", valueMinutes: 15 },
+      { operationId: "high-capacity-lock", tick: 16, actor: "human", kind: "LOCK_RESOURCE", resource: "Packaging" },
+    ];
+    const receipt = await simulateFactory(input);
+    expect(receipt.upperBoundProof?.proven).toBe(false);
+
+    const store = await readyStore();
+    const state = store.getSnapshot();
+    const scenario = state.scenarios[0];
+    expect(scenario).toBeDefined();
+    const currentLockRevision = 8;
+    const currentState = {
+      ...state,
+      packagingLocked: true,
+      lockRevision: currentLockRevision,
+      scenarios: [{
+        ...scenario!,
+        receipt,
+        receiptScenarioRevision: scenario!.revision,
+        receiptLockRevision: currentLockRevision,
+      }, state.scenarios[1]!],
+    };
+    const currentView = createBlueprintViewModel(currentState).scenarios.find((item) => item.id === scenario!.id);
+    expect(currentView?.status).toBe("FAILED");
+    expect(currentView?.infeasibilityProof).toMatchObject({ proven: false, sourceCurrent: true });
+
+    const staleView = createBlueprintViewModel({
+      ...currentState,
+      packagingLocked: false,
+      lockRevision: currentLockRevision + 1,
+    }).scenarios.find((item) => item.id === scenario!.id);
+    expect(staleView?.status).toBe("STALE");
+    expect(staleView?.infeasibilityProof).toMatchObject({ proven: false, sourceCurrent: false });
   });
 
   it("recomputes simulation source currentness when an idempotent receipt is replayed after a lock change", async () => {

@@ -33,6 +33,16 @@ export interface ScenarioMetricView {
   machineAdditions: string;
 }
 
+export interface InfeasibilityProofView {
+  proofVersion: string;
+  method: string;
+  goodOutputUpperBound: number;
+  targetGoodOutputUnits: number;
+  exactInequality: string;
+  proven: boolean;
+  sourceCurrent: boolean;
+}
+
 export interface ScenarioView {
   id: string;
   marker: string;
@@ -41,6 +51,8 @@ export interface ScenarioView {
   tone: ScenarioTone;
   revision: number;
   receiptId: string | null;
+  engineVersion: string | null;
+  infeasibilityProof: InfeasibilityProofView | null;
   runnable: boolean;
   branchable: boolean;
   metrics: ScenarioMetricView;

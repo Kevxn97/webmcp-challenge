@@ -1114,6 +1114,68 @@ td code {
   text-transform: uppercase;
 }
 
+.evidence-dialog .proof-panel {
+  border-bottom: 1px solid var(--line);
+}
+
+.evidence-dialog .proof-panel--conclusive {
+  background: var(--red-soft);
+}
+
+.proof-panel--conclusive .section-eyebrow,
+.proof-panel--conclusive .proof-inequality {
+  color: var(--red);
+}
+
+.evidence-dialog .proof-panel--historical {
+  background: rgba(180, 107, 23, 0.1);
+}
+
+.proof-panel--historical .section-eyebrow,
+.proof-panel--historical .proof-inequality {
+  color: var(--amber);
+}
+
+.evidence-dialog .proof-panel--inconclusive {
+  background: var(--blue-soft);
+}
+
+.proof-panel--inconclusive .section-eyebrow,
+.proof-panel--inconclusive .proof-inequality {
+  color: var(--blue);
+}
+
+.proof-panel h3 {
+  margin-top: 5px;
+}
+
+.proof-inequality {
+  display: block;
+  width: fit-content;
+  margin: 4px 0 10px;
+  padding: 7px 10px;
+  border: 1px solid currentColor;
+  background: var(--paper-strong);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.proof-panel p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.proof-panel small {
+  display: block;
+  margin-top: 9px;
+  color: var(--ink-soft);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 7px;
+  overflow-wrap: anywhere;
+}
+
 .formula-list {
   margin: 0;
   border-top: 1px solid var(--line);

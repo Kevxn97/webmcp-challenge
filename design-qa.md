@@ -29,6 +29,7 @@ No visible P0, P1, or P2 mismatch remains after the final comparison.
 1. The first matched build compressed the decision table and left too much unused space in the blueprint region. Increased evidence-cell padding and a stronger decision bar restored the source hierarchy.
 2. The second build grouped the scenario traces too tightly. The trace stack now distributes Baseline, Scenario A, and Scenario B evenly through the available factory canvas.
 3. The final pass replaced the domestic-looking mixer symbol with an industrial gear icon, kept the Packaging lock discoverable in both states, tied state/trace labels to live revisions and receipts, and disabled Run/Branch/Explain for empty scenario slots.
+4. The recording-readiness pass surfaced the real receipt engine version and added a dedicated lock-bound proof panel. The exact `9252 < 10937` inequality is now visible in the product rather than only inside a tool response.
 
 ## Required surface checks
 
@@ -38,7 +39,7 @@ No visible P0, P1, or P2 mismatch remains after the final comparison.
 - Imagery and texture: the project-specific generated drafting-grid asset creates paper depth without reducing text contrast.
 - Icons: Phosphor icons provide coherent truck, gear, package, shield, warehouse, lock, receipt, agent, branch, and warning symbols; there are no emoji, inline SVG approximations, or placeholder boxes.
 - Copy and data: all scenario metrics, constraint evidence, receipt IDs, revision warnings, locks, and ledger events are tied to live application state.
-- Interaction: evidence dialog opens/closes; Packaging lock toggles and increments revision; branching clears the receipt; re-simulation under the lock returns `PROVEN INFEASIBLE`; Reset clears scenarios and disables unavailable actions.
+- Interaction: evidence dialog opens/closes and renders the receipt's actual engine identifier; Packaging lock toggles and increments revision; branching clears the receipt; re-simulation under the lock returns `PROVEN INFEASIBLE` and visibly renders its exact upper-bound proof; Reset clears scenarios and disables unavailable actions.
 - Accessibility basics: semantic landmark regions, headings, table headers, native modal focus containment with Escape dismissal and trigger-focus restoration, labeled icon buttons, `aria-pressed` lock state, visible focus treatment, and native disabled states are present.
 - Runtime: browser inspection after the complete interaction flow reported zero console errors and zero warnings.
 

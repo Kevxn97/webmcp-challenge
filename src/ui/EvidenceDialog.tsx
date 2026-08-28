@@ -9,11 +9,57 @@ interface EvidenceDialogProps {
   onClose: () => void;
 }
 
+export interface ProofPresentation {
+  tone: "conclusive" | "inconclusive" | "historical";
+  eyebrow: string;
+  title: string;
+  comparison: string;
+  explanation: string;
+}
+
+export function describeProof(scenario: ScenarioView): ProofPresentation | null {
+  const proof = scenario.infeasibilityProof;
+  if (!proof) return null;
+  const upperBound = proof.goodOutputUpperBound.toLocaleString("en-US");
+  const target = proof.targetGoodOutputUnits.toLocaleString("en-US");
+
+  if (!proof.sourceCurrent || scenario.status === "STALE") {
+    return {
+      tone: "historical",
+      eyebrow: "Historical lock-bound analysis",
+      title: "Receipt is stale under the current factory state",
+      comparison: proof.proven
+        ? proof.exactInequality
+        : `${proof.goodOutputUpperBound} ≥ ${proof.targetGoodOutputUnits}`,
+      explanation: `This ${upperBound}-unit bound was computed for an earlier scenario or lock revision. It remains auditable evidence, but it does not prove the current mission infeasible.`,
+    };
+  }
+
+  if (!proof.proven || scenario.status !== "PROVEN INFEASIBLE") {
+    return {
+      tone: "inconclusive",
+      eyebrow: "Lock-bound upper-bound analysis",
+      title: "The bound does not prove infeasibility",
+      comparison: `${proof.goodOutputUpperBound} ≥ ${proof.targetGoodOutputUnits}`,
+      explanation: `The computed upper bound is ${upperBound} good units against a ${target}-unit target. Because the bound does not fall below the target, this analysis is not an infeasibility proof.`,
+    };
+  }
+
+  return {
+    tone: "conclusive",
+    eyebrow: "Lock-bound upper-bound proof",
+    title: "Mission proven infeasible under the human lock",
+    comparison: proof.exactInequality,
+    explanation: `At most ${upperBound} good units can reach the warehouse while Packaging remains locked. The mission requires ${target}.`,
+  };
+}
+
 export function EvidenceDialog({ scenario, open, onClose }: EvidenceDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const scenarioId = scenario?.id;
   const receiptId = scenario?.receiptId;
+  const proofPresentation = scenario ? describeProof(scenario) : null;
 
   useEffect(() => {
     if (!open || !scenarioId || !receiptId) return;
@@ -63,9 +109,22 @@ export function EvidenceDialog({ scenario, open, onClose }: EvidenceDialogProps)
         </header>
         <div className="evidence-summary">
           <span><Fingerprint aria-hidden="true" size={20} />Receipt <code>{receiptId}</code></span>
-          <span><Function aria-hidden="true" size={20} />Engine <code>factory-sim/1.0.0</code></span>
+          <span><Function aria-hidden="true" size={20} />Engine <code>{scenario.engineVersion ?? "—"}</code></span>
           <span><CheckCircle aria-hidden="true" size={20} weight="fill" />No model-generated metrics</span>
         </div>
+        {scenario.infeasibilityProof && proofPresentation && (
+          <section className={`proof-panel proof-panel--${proofPresentation.tone}`} aria-labelledby="proof-panel-title">
+            <span className="section-eyebrow">{proofPresentation.eyebrow}</span>
+            <h3 id="proof-panel-title">{proofPresentation.title}</h3>
+            <code className="proof-inequality">{proofPresentation.comparison}</code>
+            <p>{proofPresentation.explanation}</p>
+            <small>
+              {scenario.infeasibilityProof.proofVersion} · {scenario.infeasibilityProof.method} · {" "}
+              {scenario.infeasibilityProof.sourceCurrent ? "CURRENT SOURCE" : "STALE SOURCE"} · {" "}
+              {scenario.infeasibilityProof.proven ? "PROVEN" : "NOT PROVEN"}
+            </small>
+          </section>
+        )}
         <section>
           <h3>Constraint evidence</h3>
           <dl className="formula-list">

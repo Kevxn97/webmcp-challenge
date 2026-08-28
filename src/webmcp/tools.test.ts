@@ -145,7 +145,8 @@ describe("factory WebMCP execution", () => {
       code: "VALIDATION_ERROR",
       request_id: "req.apply.1",
     });
-    expect(result.data).toMatchObject({ issues: expect.any(Array) });
+    const validationData = result.data as { issues?: unknown };
+    expect(Array.isArray(validationData.issues)).toBe(true);
     expect(bus.applyScenarioChanges).not.toHaveBeenCalled();
     expect(bus.awaitVisibleCommit).not.toHaveBeenCalled();
   });
@@ -428,6 +429,95 @@ describe("factory WebMCP execution", () => {
       status: "ok",
       data: source,
     });
+  });
+
+  it("ignores inherited Object and Array toJSON hooks for success and error envelopes", async () => {
+    const objectToJson = Object.getOwnPropertyDescriptor(
+      Object.prototype,
+      "toJSON",
+    );
+    const arrayToJson = Object.getOwnPropertyDescriptor(
+      Array.prototype,
+      "toJSON",
+    );
+    let successJson: string | undefined;
+    let errorJson: string | undefined;
+    let successData: unknown;
+
+    try {
+      Object.defineProperty(Object.prototype, "toJSON", {
+        value: () => ({ polluted_by_object_prototype: true }),
+        configurable: true,
+      });
+      Object.defineProperty(Array.prototype, "toJSON", {
+        value: () => {
+          throw new Error("polluted array serializer");
+        },
+        configurable: true,
+      });
+
+      const successBus = makeBus({
+        getFactorySnapshot: vi.fn(async () => ({
+          ...OK_OUTCOME,
+          data: {
+            factory: { revision: 7 },
+            throughput_band: [900, 950, 1000],
+          },
+        })),
+      });
+      const malformedData = { visible: true };
+      Object.defineProperty(malformedData, "hidden", {
+        value: 1n,
+        enumerable: false,
+      });
+      const errorBus = makeBus({
+        getFactorySnapshot: vi.fn(async () => ({
+          ...OK_OUTCOME,
+          data: malformedData,
+        })),
+      });
+
+      const success = await descriptor(
+        "get_factory_snapshot",
+        successBus,
+      ).execute({}, { signal: new AbortController().signal });
+      const error = await descriptor("get_factory_snapshot", errorBus).execute(
+        {},
+        { signal: new AbortController().signal },
+      );
+      successData = success.data;
+      successJson = JSON.stringify(success);
+      errorJson = JSON.stringify(error);
+    } finally {
+      if (arrayToJson) {
+        Object.defineProperty(Array.prototype, "toJSON", arrayToJson);
+      } else {
+        Reflect.deleteProperty(Array.prototype, "toJSON");
+      }
+      if (objectToJson) {
+        Object.defineProperty(Object.prototype, "toJSON", objectToJson);
+      } else {
+        Reflect.deleteProperty(Object.prototype, "toJSON");
+      }
+    }
+
+    const success = JSON.parse(successJson ?? "null") as {
+      status?: string;
+      data?: { factory?: { revision?: number }; throughput_band?: number[] };
+    };
+    const error = JSON.parse(errorJson ?? "null") as {
+      status?: string;
+      code?: string;
+    };
+    const liveData = successData as { throughput_band?: unknown };
+
+    expect(success.status).toBe("ok");
+    expect(success.data?.factory?.revision).toBe(7);
+    expect(success.data?.throughput_band).toEqual([900, 950, 1000]);
+    expect(Array.isArray(liveData.throughput_band)).toBe(true);
+    expect(Object.getPrototypeOf(successData as object)).toBeNull();
+    expect(Object.getPrototypeOf(liveData.throughput_band as object)).toBeNull();
+    expect(error).toMatchObject({ status: "error", code: "INTERNAL_ERROR" });
   });
 
   it.each(["OK", "NOT_A_FACTORY_CODE"])(

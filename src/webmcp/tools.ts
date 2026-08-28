@@ -237,11 +237,12 @@ function clonePlainJsonValue(
           clone.push(item.value);
         }
 
+        Object.setPrototypeOf(clone, null);
         Object.freeze(clone);
         return { ok: true, value: clone };
       }
 
-      const clone: Record<string, JsonValue> = {};
+      const clone = Object.create(null) as Record<string, JsonValue>;
       for (const rawKey of keys) {
         const key = rawKey as string;
         if (key === "toJSON") {
@@ -331,14 +332,14 @@ function buildEnvelope(
     return null;
   }
 
-  const envelope: FactoryToolEnvelope = {
+  const envelope = Object.assign(Object.create(null), {
     schema_version: FACTORY_TOOL_SCHEMA_VERSION,
     status,
     code,
     request_id: requestId,
     message,
     data: clonedData.value,
-  };
+  }) as FactoryToolEnvelope;
   Object.freeze(envelope);
 
   try {
@@ -349,14 +350,14 @@ function buildEnvelope(
 }
 
 function minimalInternalErrorEnvelope(requestId: string | null): FactoryToolEnvelope {
-  const envelope: FactoryToolEnvelope = {
+  const envelope = Object.assign(Object.create(null), {
     schema_version: FACTORY_TOOL_SCHEMA_VERSION,
     status: "error",
     code: "INTERNAL_ERROR",
     request_id: requestId,
     message: "The operation could not be completed.",
     data: null,
-  };
+  }) as FactoryToolEnvelope;
   return Object.freeze(envelope);
 }
 

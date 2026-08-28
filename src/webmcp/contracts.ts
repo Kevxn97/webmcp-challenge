@@ -1,3 +1,12 @@
+import {
+  PACKAGING_CALIBRATIONS,
+  PACKAGING_CHANGEOVER_MINUTES,
+  QUALITY_RATES_UNITS_PER_HOUR,
+  SIMULATION_HORIZON_SHIFTS,
+  SUPPLIER_MODES,
+  WAREHOUSE_DOCK_RATES_UNITS_PER_HOUR,
+} from "./contract-constants";
+
 export const FACTORY_TOOL_SCHEMA_VERSION = "factory-tools/v1" as const;
 
 export const FACTORY_TOOL_CODES = [
@@ -34,57 +43,65 @@ export interface CommandOutcome<TData = unknown> {
 }
 
 export interface ToolExecutionContext {
-  signal: AbortSignal;
-  source: "webmcp";
+  readonly signal: AbortSignal;
+  readonly source: "webmcp";
 }
 
-export type GetFactorySnapshotInput = Record<string, never>;
+export type GetFactorySnapshotInput = Readonly<Record<string, never>>;
 
 export interface GetScenarioSnapshotInput {
-  scenario_id: string;
+  readonly scenario_id: string;
 }
 
 export interface CreateScenarioInput {
-  request_id: string;
-  name: string;
-  factory_version_id: string;
-  expected_factory_revision: number;
-  expected_lock_revision: number;
+  readonly request_id: string;
+  readonly name: string;
+  readonly factory_version_id: string;
+  readonly expected_factory_revision: number;
+  readonly expected_lock_revision: number;
 }
 
-export type PackagingCalibration = "standard" | "enhanced";
-export type SupplierMode = "standard" | "expedite";
+export type PackagingChangeoverMinutes =
+  (typeof PACKAGING_CHANGEOVER_MINUTES)[number];
+export type PackagingCalibration = (typeof PACKAGING_CALIBRATIONS)[number];
+export type SupplierMode = (typeof SUPPLIER_MODES)[number];
+export type QualityRateUnitsPerHour =
+  (typeof QUALITY_RATES_UNITS_PER_HOUR)[number];
+export type WarehouseDockUnitsPerHour =
+  (typeof WAREHOUSE_DOCK_RATES_UNITS_PER_HOUR)[number];
+export type SimulationHorizonShifts =
+  (typeof SIMULATION_HORIZON_SHIFTS)[number];
 
 export interface ScenarioChanges {
-  mixer_speed_bps?: number;
-  packaging_speed_bps?: number;
-  packaging_changeover_minutes?: 15 | 30 | 45;
-  packaging_calibration?: PackagingCalibration;
-  supplier_mode?: SupplierMode;
-  quality_rate_units_per_hour?: 600 | 700 | 800 | 900;
-  warehouse_dock_units_per_hour?: 800 | 900 | 1000;
+  readonly mixer_speed_bps?: number;
+  readonly packaging_speed_bps?: number;
+  readonly packaging_changeover_minutes?: PackagingChangeoverMinutes;
+  readonly packaging_calibration?: PackagingCalibration;
+  readonly supplier_mode?: SupplierMode;
+  readonly quality_rate_units_per_hour?: QualityRateUnitsPerHour;
+  readonly warehouse_dock_units_per_hour?: WarehouseDockUnitsPerHour;
 }
 
 export interface ApplyScenarioChangesInput {
-  request_id: string;
-  scenario_id: string;
-  expected_factory_revision: number;
-  expected_scenario_revision: number;
-  expected_lock_revision: number;
-  changes: ScenarioChanges;
+  readonly request_id: string;
+  readonly scenario_id: string;
+  readonly expected_factory_revision: number;
+  readonly expected_scenario_revision: number;
+  readonly expected_lock_revision: number;
+  readonly changes: ScenarioChanges;
 }
 
 export interface RunFactorySimulationInput {
-  request_id: string;
-  scenario_id: string;
-  expected_factory_revision: number;
-  expected_scenario_revision: number;
-  expected_lock_revision: number;
-  horizon_shifts: 1;
+  readonly request_id: string;
+  readonly scenario_id: string;
+  readonly expected_factory_revision: number;
+  readonly expected_scenario_revision: number;
+  readonly expected_lock_revision: number;
+  readonly horizon_shifts: SimulationHorizonShifts;
 }
 
 export interface CompareSimulationRunsInput {
-  run_ids: string[];
+  readonly run_ids: readonly string[];
 }
 
 export interface FactoryCommandBus {
@@ -174,7 +191,7 @@ export interface WebMcpToolAnnotations {
 }
 
 export interface WebMcpExecutionMetadata {
-  signal: AbortSignal;
+  readonly signal: AbortSignal;
 }
 
 export interface WebMcpToolDescriptor {

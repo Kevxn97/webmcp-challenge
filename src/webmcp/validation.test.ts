@@ -157,10 +157,6 @@ describe("WebMCP validator reconstruction", () => {
       horizon_shifts: 1,
     };
     const runIdsSource = ["run-a", "run-b"];
-    Object.defineProperty(runIdsSource, "map", {
-      value: () => runIdsSource,
-      enumerable: false,
-    });
     const compareSource = { run_ids: runIdsSource };
 
     const factory = unwrap(validateGetFactorySnapshotInput(factorySource));
@@ -179,9 +175,14 @@ describe("WebMCP validator reconstruction", () => {
     expect(compare).not.toBe(compareSource);
     expect(compare.run_ids).not.toBe(runIdsSource);
     expect(Object.getPrototypeOf(compare.run_ids)).toBe(Array.prototype);
-    expect(Object.prototype.hasOwnProperty.call(compare.run_ids, "map")).toBe(
-      false,
-    );
+    expect(Object.isFrozen(factory)).toBe(true);
+    expect(Object.isFrozen(scenario)).toBe(true);
+    expect(Object.isFrozen(create)).toBe(true);
+    expect(Object.isFrozen(apply)).toBe(true);
+    expect(Object.isFrozen(apply.changes)).toBe(true);
+    expect(Object.isFrozen(run)).toBe(true);
+    expect(Object.isFrozen(compare)).toBe(true);
+    expect(Object.isFrozen(compare.run_ids)).toBe(true);
 
     scenarioSource.scenario_id = "scenario-mutated";
     createSource.name = "Mutated";
@@ -197,5 +198,138 @@ describe("WebMCP validator reconstruction", () => {
     expect(Object.values(apply.changes).every((value) =>
       ["string", "number", "boolean"].includes(typeof value),
     )).toBe(true);
+  });
+
+  it("snapshots each allowed data property once", () => {
+    const source = {
+      request_id: "req.create.snapshot",
+      name: "Stable Name",
+      factory_version_id: "factory-v7",
+      expected_factory_revision: 7,
+      expected_lock_revision: 3,
+    };
+    let nameDescriptorReads = 0;
+    const changingDescriptor = new Proxy(source, {
+      getOwnPropertyDescriptor(target, key) {
+        const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+        if (key !== "name" || !descriptor || !("value" in descriptor)) {
+          return descriptor;
+        }
+        nameDescriptorReads += 1;
+        return {
+          ...descriptor,
+          value: nameDescriptorReads === 1 ? "Stable Name" : "Changed Name",
+        };
+      },
+    });
+
+    const result = unwrap(validateCreateScenarioInput(changingDescriptor));
+
+    expect(nameDescriptorReads).toBe(1);
+    expect(result.name).toBe("Stable Name");
+    expect(Object.isFrozen(result)).toBe(true);
+  });
+
+  it("rejects accessors without invoking their getters", () => {
+    let getterCalls = 0;
+    const source = {
+      request_id: "req.create.accessor",
+      factory_version_id: "factory-v7",
+      expected_factory_revision: 7,
+      expected_lock_revision: 3,
+    } as Record<string, unknown>;
+    Object.defineProperty(source, "name", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        getterCalls += 1;
+        return getterCalls === 1 ? "First Name" : "Changed Name";
+      },
+    });
+
+    const result = validateCreateScenarioInput(source);
+
+    expect(result.ok).toBe(false);
+    expect(getterCalls).toBe(0);
+    if (!result.ok) {
+      expect(result.issues).toContain(
+        "input.name must be an enumerable data property.",
+      );
+    }
+  });
+
+  it("rejects accessor array elements without invoking their getters", () => {
+    let getterCalls = 0;
+    const runIds = ["run-a", "run-b"];
+    Object.defineProperty(runIds, "0", {
+      enumerable: true,
+      configurable: true,
+      get() {
+        getterCalls += 1;
+        return getterCalls === 1 ? "run-a" : "run-mutated";
+      },
+    });
+
+    const result = validateCompareSimulationRunsInput({ run_ids: runIds });
+
+    expect(result.ok).toBe(false);
+    expect(getterCalls).toBe(0);
+    if (!result.ok) {
+      expect(result.issues).toContain(
+        "input.run_ids[0] must be an enumerable data property.",
+      );
+    }
+  });
+});
+
+describe("WebMCP identifier boundaries", () => {
+  const createInput = (requestId: string) => ({
+    request_id: requestId,
+    name: "Boundary Scenario",
+    factory_version_id: "factory-v7",
+    expected_factory_revision: 7,
+    expected_lock_revision: 3,
+  });
+
+  it("accepts request identifiers at both exact length boundaries", () => {
+    expect(validateCreateScenarioInput(createInput("r")).ok).toBe(true);
+    expect(
+      validateCreateScenarioInput(
+        createInput("r".repeat(REQUEST_ID_CONSTRAINTS.maxLength)),
+      ).ok,
+    ).toBe(true);
+  });
+
+  it("rejects request identifiers outside bounds or outside the pattern", () => {
+    expect(validateCreateScenarioInput(createInput("")).ok).toBe(false);
+    expect(
+      validateCreateScenarioInput(
+        createInput("r".repeat(REQUEST_ID_CONSTRAINTS.maxLength + 1)),
+      ).ok,
+    ).toBe(false);
+    expect(validateCreateScenarioInput(createInput("request/id")).ok).toBe(
+      false,
+    );
+  });
+
+  it("accepts resource identifiers at both exact length boundaries", () => {
+    expect(validateGetScenarioSnapshotInput({ scenario_id: "s" }).ok).toBe(true);
+    expect(
+      validateGetScenarioSnapshotInput({
+        scenario_id: "s".repeat(RESOURCE_ID_CONSTRAINTS.maxLength),
+      }).ok,
+    ).toBe(true);
+  });
+
+  it("rejects resource identifiers outside bounds or outside the pattern", () => {
+    expect(validateGetScenarioSnapshotInput({ scenario_id: "" }).ok).toBe(false);
+    expect(
+      validateGetScenarioSnapshotInput({
+        scenario_id: "s".repeat(RESOURCE_ID_CONSTRAINTS.maxLength + 1),
+      }).ok,
+    ).toBe(false);
+    expect(validateGetScenarioSnapshotInput({ scenario_id: "scenario/id" }).ok).toBe(
+      false,
+    );
   });
 });

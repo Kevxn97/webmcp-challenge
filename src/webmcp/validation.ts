@@ -64,6 +64,12 @@ function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
 }
 
+type Mutable<T> = { -readonly [Key in keyof T]: T[Key] };
+
+function frozen<T extends object>(value: T): Readonly<T> {
+  return Object.freeze(value);
+}
+
 function validateShape(
   value: unknown,
   allowed: readonly string[],
@@ -76,24 +82,93 @@ function validateShape(
 
   const issues: string[] = [];
   const allowedKeys = new Set(allowed);
+  const seenAllowedKeys = new Set<string>();
+  const snapshot = Object.create(null) as Record<string, unknown>;
+  let ownKeys: readonly PropertyKey[];
 
-  for (const key of Object.keys(value)) {
+  try {
+    ownKeys = Reflect.ownKeys(value);
+  } catch {
+    return { issues: [`${path} must be a readable plain object.`] };
+  }
+
+  for (const key of ownKeys) {
+    if (typeof key !== "string") {
+      issues.push(`${path} must not contain symbol properties.`);
+      continue;
+    }
+
+    let descriptor: PropertyDescriptor | undefined;
+    try {
+      // Snapshot each property descriptor once. Accessor values are never read.
+      descriptor = Object.getOwnPropertyDescriptor(value, key);
+    } catch {
+      issues.push(`${path}.${key} must be a readable data property.`);
+      continue;
+    }
+
     if (!allowedKeys.has(key)) {
       issues.push(`${path}.${key} is not allowed.`);
+      continue;
     }
+    seenAllowedKeys.add(key);
+
+    if (
+      !descriptor ||
+      !("value" in descriptor) ||
+      descriptor.enumerable !== true
+    ) {
+      issues.push(`${path}.${key} must be an enumerable data property.`);
+      continue;
+    }
+
+    Object.defineProperty(snapshot, key, {
+      value: descriptor.value,
+      enumerable: true,
+      configurable: false,
+      writable: false,
+    });
   }
 
   for (const key of required) {
-    if (!hasOwn(value, key)) {
+    if (!seenAllowedKeys.has(key)) {
       issues.push(`${path}.${key} is required.`);
     }
   }
 
-  return { record: value, issues };
+  return { record: snapshot, issues };
+}
+
+function stringLengthInCodePoints(value: string): number {
+  return [...value].length;
+}
+
+function isValidRequestId(value: unknown): value is string {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const length = stringLengthInCodePoints(value);
+  const validLength =
+    length >= REQUEST_ID_CONSTRAINTS.minLength &&
+    length <= REQUEST_ID_CONSTRAINTS.maxLength;
+  const validPattern = REQUEST_ID_PATTERN.test(value);
+  return validLength && validPattern;
+}
+
+function isValidResourceId(value: unknown): value is string {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const length = stringLengthInCodePoints(value);
+  const validLength =
+    length >= RESOURCE_ID_CONSTRAINTS.minLength &&
+    length <= RESOURCE_ID_CONSTRAINTS.maxLength;
+  const validPattern = RESOURCE_ID_PATTERN.test(value);
+  return validLength && validPattern;
 }
 
 function validateRequestId(value: unknown, path: string, issues: string[]): void {
-  if (typeof value !== "string" || !REQUEST_ID_PATTERN.test(value)) {
+  if (!isValidRequestId(value)) {
     issues.push(
       `${path} must be a ${REQUEST_ID_CONSTRAINTS.minLength}-${REQUEST_ID_CONSTRAINTS.maxLength} character request identifier.`,
     );
@@ -101,7 +176,7 @@ function validateRequestId(value: unknown, path: string, issues: string[]): void
 }
 
 function validateResourceId(value: unknown, path: string, issues: string[]): void {
-  if (typeof value !== "string" || !RESOURCE_ID_PATTERN.test(value)) {
+  if (!isValidResourceId(value)) {
     issues.push(
       `${path} must be a ${RESOURCE_ID_CONSTRAINTS.minLength}-${RESOURCE_ID_CONSTRAINTS.maxLength} character resource identifier.`,
     );
@@ -164,6 +239,103 @@ function validateStringEnum(
   }
 }
 
+function snapshotDenseArray(
+  value: unknown,
+  minimumLength: number,
+  maximumLength: number,
+  path: string,
+): { values?: unknown[]; issues: string[] } {
+  if (!Array.isArray(value)) {
+    return { issues: [`${path} must be an array.`] };
+  }
+
+  try {
+    const prototype = Object.getPrototypeOf(value) as unknown;
+    if (prototype !== Array.prototype && prototype !== null) {
+      return { issues: [`${path} must be a plain array.`] };
+    }
+  } catch {
+    return { issues: [`${path} must be a readable plain array.`] };
+  }
+
+  let ownKeys: readonly PropertyKey[];
+  try {
+    ownKeys = Reflect.ownKeys(value);
+  } catch {
+    return { issues: [`${path} must be a readable plain array.`] };
+  }
+
+  const issues: string[] = [];
+  const descriptors = new Map<string, PropertyDescriptor>();
+  for (const key of ownKeys) {
+    if (typeof key !== "string") {
+      issues.push(`${path} must not contain symbol properties.`);
+      continue;
+    }
+
+    let descriptor: PropertyDescriptor | undefined;
+    try {
+      // Capture every own string-keyed descriptor once without reading accessors.
+      descriptor = Object.getOwnPropertyDescriptor(value, key);
+    } catch {
+      issues.push(`${path}.${key} must be a readable data property.`);
+      continue;
+    }
+    if (!descriptor) {
+      issues.push(`${path}.${key} must be a stable data property.`);
+      continue;
+    }
+    descriptors.set(key, descriptor);
+  }
+
+  const lengthDescriptor = descriptors.get("length");
+  if (
+    !lengthDescriptor ||
+    !("value" in lengthDescriptor) ||
+    typeof lengthDescriptor.value !== "number" ||
+    !Number.isSafeInteger(lengthDescriptor.value) ||
+    lengthDescriptor.value < minimumLength ||
+    lengthDescriptor.value > maximumLength
+  ) {
+    issues.push(
+      `${path} must contain ${minimumLength} to ${maximumLength} items.`,
+    );
+    return { issues };
+  }
+
+  const length = lengthDescriptor.value;
+  const expectedIndexKeys = new Set<string>();
+  for (let index = 0; index < length; index += 1) {
+    expectedIndexKeys.add(String(index));
+  }
+  for (const key of descriptors.keys()) {
+    if (key !== "length" && !expectedIndexKeys.has(key)) {
+      issues.push(`${path}.${key} is not allowed.`);
+    }
+  }
+
+  const snapshot: unknown[] = [];
+  for (let index = 0; index < length; index += 1) {
+    const descriptor = descriptors.get(String(index));
+    if (
+      !descriptor ||
+      !("value" in descriptor) ||
+      descriptor.enumerable !== true
+    ) {
+      issues.push(`${path}[${index}] must be an enumerable data property.`);
+      continue;
+    }
+    Object.defineProperty(snapshot, String(index), {
+      value: descriptor.value,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  return { values: snapshot, issues };
+}
+
 export function validateGetFactorySnapshotInput(
   input: unknown,
 ): ValidationResult<GetFactorySnapshotInput> {
@@ -172,7 +344,7 @@ export function validateGetFactorySnapshotInput(
     GET_FACTORY_SNAPSHOT_FIELDS,
     GET_FACTORY_SNAPSHOT_FIELDS,
   );
-  return shape.issues.length > 0 ? invalid(shape.issues) : valid({});
+  return shape.issues.length > 0 ? invalid(shape.issues) : valid(frozen({}));
 }
 
 export function validateGetScenarioSnapshotInput(
@@ -190,7 +362,9 @@ export function validateGetScenarioSnapshotInput(
   validateResourceId(shape.record.scenario_id, "input.scenario_id", shape.issues);
   return shape.issues.length > 0
     ? invalid(shape.issues)
-    : valid({ scenario_id: shape.record.scenario_id as string });
+    : valid(
+        frozen({ scenario_id: shape.record.scenario_id as string }),
+      );
 }
 
 export function validateCreateScenarioInput(
@@ -236,13 +410,15 @@ export function validateCreateScenarioInput(
 
   return shape.issues.length > 0
     ? invalid(shape.issues)
-    : valid({
-        request_id: record.request_id as string,
-        name: record.name as string,
-        factory_version_id: record.factory_version_id as string,
-        expected_factory_revision: record.expected_factory_revision as number,
-        expected_lock_revision: record.expected_lock_revision as number,
-      });
+    : valid(
+        frozen({
+          request_id: record.request_id as string,
+          name: record.name as string,
+          factory_version_id: record.factory_version_id as string,
+          expected_factory_revision: record.expected_factory_revision as number,
+          expected_lock_revision: record.expected_lock_revision as number,
+        }),
+      );
 }
 
 function validateScenarioChanges(input: unknown): ValidationResult<ScenarioChanges> {
@@ -326,7 +502,7 @@ function validateScenarioChanges(input: unknown): ValidationResult<ScenarioChang
     return invalid(shape.issues);
   }
 
-  const changes: ScenarioChanges = {};
+  const changes = Object.create(null) as Mutable<ScenarioChanges>;
   if (hasOwn(record, "mixer_speed_bps")) {
     changes.mixer_speed_bps = record.mixer_speed_bps as number;
   }
@@ -361,7 +537,7 @@ function validateScenarioChanges(input: unknown): ValidationResult<ScenarioChang
         ScenarioChanges["warehouse_dock_units_per_hour"]
       >;
   }
-  return valid(changes);
+  return valid(frozen(changes));
 }
 
 export function validateApplyScenarioChangesInput(
@@ -402,14 +578,16 @@ export function validateApplyScenarioChangesInput(
 
   return shape.issues.length > 0 || !changes.ok
     ? invalid(shape.issues)
-    : valid({
-        request_id: record.request_id as string,
-        scenario_id: record.scenario_id as string,
-        expected_factory_revision: record.expected_factory_revision as number,
-        expected_scenario_revision: record.expected_scenario_revision as number,
-        expected_lock_revision: record.expected_lock_revision as number,
-        changes: changes.value,
-      });
+    : valid(
+        frozen({
+          request_id: record.request_id as string,
+          scenario_id: record.scenario_id as string,
+          expected_factory_revision: record.expected_factory_revision as number,
+          expected_scenario_revision: record.expected_scenario_revision as number,
+          expected_lock_revision: record.expected_lock_revision as number,
+          changes: changes.value,
+        }),
+      );
 }
 
 export function validateRunFactorySimulationInput(
@@ -451,14 +629,17 @@ export function validateRunFactorySimulationInput(
 
   return shape.issues.length > 0
     ? invalid(shape.issues)
-    : valid({
-        request_id: record.request_id as string,
-        scenario_id: record.scenario_id as string,
-        expected_factory_revision: record.expected_factory_revision as number,
-        expected_scenario_revision: record.expected_scenario_revision as number,
-        expected_lock_revision: record.expected_lock_revision as number,
-        horizon_shifts: record.horizon_shifts as 1,
-      });
+    : valid(
+        frozen({
+          request_id: record.request_id as string,
+          scenario_id: record.scenario_id as string,
+          expected_factory_revision: record.expected_factory_revision as number,
+          expected_scenario_revision: record.expected_scenario_revision as number,
+          expected_lock_revision: record.expected_lock_revision as number,
+          horizon_shifts:
+            record.horizon_shifts as RunFactorySimulationInput["horizon_shifts"],
+        }),
+      );
 }
 
 export function validateCompareSimulationRunsInput(
@@ -473,21 +654,20 @@ export function validateCompareSimulationRunsInput(
     return invalid(shape.issues);
   }
 
-  const value = shape.record.run_ids;
-  if (
-    !Array.isArray(value) ||
-    value.length < COMPARE_RUN_IDS_CONSTRAINTS.minItems ||
-    value.length > COMPARE_RUN_IDS_CONSTRAINTS.maxItems
-  ) {
-    shape.issues.push(
-      `input.run_ids must contain ${COMPARE_RUN_IDS_CONSTRAINTS.minItems} to ${COMPARE_RUN_IDS_CONSTRAINTS.maxItems} run identifiers.`,
-    );
+  const snapshot = snapshotDenseArray(
+    shape.record.run_ids,
+    COMPARE_RUN_IDS_CONSTRAINTS.minItems,
+    COMPARE_RUN_IDS_CONSTRAINTS.maxItems,
+    "input.run_ids",
+  );
+  shape.issues.push(...snapshot.issues);
+  if (!snapshot.values) {
     return invalid(shape.issues);
   }
 
   const runIds: string[] = [];
-  for (let index = 0; index < value.length; index += 1) {
-    const runId = value[index];
+  for (let index = 0; index < snapshot.values.length; index += 1) {
+    const runId = snapshot.values[index];
     validateResourceId(runId, `input.run_ids[${index}]`, shape.issues);
     if (typeof runId === "string") {
       runIds.push(runId);
@@ -502,7 +682,7 @@ export function validateCompareSimulationRunsInput(
 
   return shape.issues.length > 0
     ? invalid(shape.issues)
-    : valid({ run_ids: runIds });
+    : valid(frozen({ run_ids: frozen(runIds) }));
 }
 
 export function extractRequestId(input: unknown): string | null {
@@ -510,8 +690,15 @@ export function extractRequestId(input: unknown): string | null {
     return null;
   }
 
-  return typeof input.request_id === "string" &&
-    REQUEST_ID_PATTERN.test(input.request_id)
-    ? input.request_id
-    : null;
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(input, "request_id");
+    return descriptor &&
+      "value" in descriptor &&
+      descriptor.enumerable === true &&
+      isValidRequestId(descriptor.value)
+      ? descriptor.value
+      : null;
+  } catch {
+    return null;
+  }
 }

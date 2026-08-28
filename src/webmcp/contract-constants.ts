@@ -1,13 +1,13 @@
 export const REQUEST_ID_CONSTRAINTS = {
   minLength: 1,
   maxLength: 64,
-  pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$",
+  pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
 } as const;
 
 export const RESOURCE_ID_CONSTRAINTS = {
   minLength: 1,
   maxLength: 80,
-  pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$",
+  pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
 } as const;
 
 export const SCENARIO_NAME_CONSTRAINTS = {

@@ -965,10 +965,39 @@ export class SandboxStore {
   }
 
   async awaitVisibleCommit() {
-    const schedule = typeof requestAnimationFrame === "function"
-      ? requestAnimationFrame
-      : (callback: FrameRequestCallback) => globalThis.setTimeout(() => callback(0), 0);
-    await new Promise<void>((resolve) => schedule(() => schedule(() => resolve())));
+    // A hidden document cannot produce a meaningful visible paint. Domain state
+    // is already committed, so the presentation barrier must not hold the tool
+    // response open until the tab becomes visible again.
+    if (
+      typeof document !== "undefined" &&
+      document.visibilityState !== "visible"
+    ) {
+      return;
+    }
+
+    if (typeof requestAnimationFrame !== "function") {
+      await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
+      return;
+    }
+
+    // Prefer two frames so React can commit and paint, but bound the wait in
+    // case the host throttles or suppresses animation frames.
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      let fallbackId: ReturnType<typeof globalThis.setTimeout> | undefined;
+
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (fallbackId !== undefined) {
+          globalThis.clearTimeout(fallbackId);
+        }
+        resolve();
+      };
+
+      fallbackId = globalThis.setTimeout(finish, 300);
+      requestAnimationFrame(() => requestAnimationFrame(finish));
+    });
   }
 }
 

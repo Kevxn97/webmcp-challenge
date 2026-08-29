@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createBaselineInput, simulateFactory } from "../domain";
 import { SandboxCommandError, SandboxStore, type ScenarioPatch } from "./store";
@@ -276,5 +276,35 @@ describe("SandboxStore", () => {
     expect(replay.run_id).toBe(first.run_id);
     expect(replay.input_hash).toBe(first.input_hash);
     expect(replay.source_is_current).toBe(false);
+  });
+
+  it("bounds the visibility barrier when animation frames do not fire", async () => {
+    vi.useFakeTimers();
+    const animationFrame = vi.fn(() => 1);
+    vi.stubGlobal("requestAnimationFrame", animationFrame);
+
+    try {
+      const pending = new SandboxStore().awaitVisibleCommit();
+      await vi.advanceTimersByTimeAsync(300);
+
+      await expect(pending).resolves.toBeUndefined();
+      expect(animationFrame).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
+  });
+
+  it("skips the visibility barrier when the document is hidden", async () => {
+    const animationFrame = vi.fn(() => 1);
+    vi.stubGlobal("document", { visibilityState: "hidden" });
+    vi.stubGlobal("requestAnimationFrame", animationFrame);
+
+    try {
+      await expect(new SandboxStore().awaitVisibleCommit()).resolves.toBeUndefined();
+      expect(animationFrame).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

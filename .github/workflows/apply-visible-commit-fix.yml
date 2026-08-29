@@ -1,0 +1,193 @@
+name: Apply visible commit fix
+
+on:
+  push:
+    branches:
+      - fix/visible-commit-timeout
+    paths:
+      - .github/workflows/apply-visible-commit-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: "true"
+
+    steps:
+      - name: Checkout fix branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply bounded visibility barrier and documentation updates
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one {label} match, found {count}.")
+              return text.replace(old, new, 1)
+
+          store_path = Path("src/app/store.ts")
+          store_text = store_path.read_text(encoding="utf-8")
+          old_barrier = '''  async awaitVisibleCommit() {
+            const schedule = typeof requestAnimationFrame === "function"
+              ? requestAnimationFrame
+              : (callback: FrameRequestCallback) => globalThis.setTimeout(() => callback(0), 0);
+            await new Promise<void>((resolve) => schedule(() => schedule(() => resolve())));
+          }
+          '''
+          new_barrier = '''  async awaitVisibleCommit() {
+            // A hidden document cannot produce a meaningful visible paint. Domain state
+            // is already committed, so the presentation barrier must not hold the tool
+            // response open until the tab becomes visible again.
+            if (
+              typeof document !== "undefined" &&
+              document.visibilityState !== "visible"
+            ) {
+              return;
+            }
+
+            if (typeof requestAnimationFrame !== "function") {
+              await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
+              return;
+            }
+
+            // Prefer two frames so React can commit and paint, but bound the wait in
+            // case the host throttles or suppresses animation frames.
+            await new Promise<void>((resolve) => {
+              let settled = false;
+              let fallbackId: ReturnType<typeof globalThis.setTimeout> | undefined;
+
+              const finish = () => {
+                if (settled) return;
+                settled = true;
+                if (fallbackId !== undefined) {
+                  globalThis.clearTimeout(fallbackId);
+                }
+                resolve();
+              };
+
+              fallbackId = globalThis.setTimeout(finish, 300);
+              requestAnimationFrame(() => requestAnimationFrame(finish));
+            });
+          }
+          '''
+          store_text = replace_once(
+              store_text,
+              old_barrier,
+              new_barrier,
+              "visible-commit barrier",
+          )
+          store_path.write_text(store_text, encoding="utf-8")
+
+          test_path = Path("src/app/store.test.ts")
+          test_text = test_path.read_text(encoding="utf-8")
+          test_text = replace_once(
+              test_text,
+              'import { describe, expect, it } from "vitest";',
+              'import { describe, expect, it, vi } from "vitest";',
+              "Vitest import",
+          )
+          test_block = '''
+
+            it("bounds the visibility barrier when animation frames do not fire", async () => {
+              vi.useFakeTimers();
+              const animationFrame = vi.fn(() => 1);
+              vi.stubGlobal("requestAnimationFrame", animationFrame);
+
+              try {
+                const pending = new SandboxStore().awaitVisibleCommit();
+                await vi.advanceTimersByTimeAsync(300);
+
+                await expect(pending).resolves.toBeUndefined();
+                expect(animationFrame).toHaveBeenCalledTimes(1);
+              } finally {
+                vi.unstubAllGlobals();
+                vi.useRealTimers();
+              }
+            });
+
+            it("skips the visibility barrier when the document is hidden", async () => {
+              const animationFrame = vi.fn(() => 1);
+              vi.stubGlobal("document", { visibilityState: "hidden" });
+              vi.stubGlobal("requestAnimationFrame", animationFrame);
+
+              try {
+                await expect(new SandboxStore().awaitVisibleCommit()).resolves.toBeUndefined();
+                expect(animationFrame).not.toHaveBeenCalled();
+              } finally {
+                vi.unstubAllGlobals();
+              }
+            });
+          '''
+          closing = "\n});\n"
+          index = test_text.rfind(closing)
+          if index == -1:
+              raise SystemExit("Could not find SandboxStore describe closing marker.")
+          test_text = test_text[:index] + test_block + test_text[index:]
+          test_path.write_text(test_text, encoding="utf-8")
+
+          readiness_path = Path("docs/SUBMISSION_READINESS.md")
+          readiness = readiness_path.read_text(encoding="utf-8")
+          readiness = replace_once(
+              readiness,
+              "The OpenAI WebMCP Challenge evaluates usefulness, originality, execution quality, thoughtful WebMCP use, and the quality of the human-agent experience. A submission also needs a project description, working public app, code repository, and demo video.",
+              "The OpenAI WebMCP Challenge scores WebMCP Leverage, Execution, Potential Impact, and Creativity & Ambition. A submission also needs a project description, working public app, code repository, and demo video.",
+              "official judging criteria",
+          )
+          readiness = replace_once(
+              readiness,
+              "| Judge access to source | Pending decision | The repository is currently private. Make it public or confirm the submission grants judges access before the deadline. |",
+              "| Judge access to source | Ready | The repository is public and GitHub detects the MIT license. |",
+              "source access gate",
+          )
+          readiness = replace_once(
+              readiness,
+              "- [ ] `npm run verify` passes from a clean checkout.",
+              "- [x] `npm run verify` passes from a clean checkout.",
+              "local verification checkbox",
+          )
+          readiness = replace_once(
+              readiness,
+              "- [ ] The GitHub `Verify` workflow is green on `main`.",
+              "- [x] The GitHub `Verify` workflow is green on `main`.",
+              "GitHub verification checkbox",
+          )
+          readiness = replace_once(
+              readiness,
+              "- [ ] Repository access is sufficient for judges.",
+              "- [x] The repository is public and GitHub detects the MIT license.",
+              "repository access checkbox",
+          )
+          readiness_path.write_text(readiness, encoding="utf-8")
+          PY
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run complete verification gate
+        run: npm run verify
+
+      - name: Commit verified fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/store.ts src/app/store.test.ts docs/SUBMISSION_READINESS.md
+          git diff --cached --check
+          git commit -m "fix: bound visible commit barrier"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

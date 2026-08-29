@@ -465,7 +465,9 @@ function createDescriptor<TInput>(
       readOnlyHint: spec.readOnly,
       untrustedContentHint: true,
     },
-    execute: async (input, { signal }) => {
+    execute: async (input, metadata) => {
+      const signal = metadata?.signal ?? new AbortController().signal;
+
       if (signal.aborted) {
         return abortedEnvelope(null);
       }

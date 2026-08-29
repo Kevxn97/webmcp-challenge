@@ -202,7 +202,7 @@ export interface WebMcpToolDescriptor {
   annotations: WebMcpToolAnnotations;
   execute(
     input: unknown,
-    metadata: WebMcpExecutionMetadata,
+    metadata?: WebMcpExecutionMetadata,
   ): FactoryToolEnvelope | Promise<FactoryToolEnvelope>;
 }
 

@@ -16,6 +16,17 @@ function executionMetadata() {
 }
 
 describe("real store + WebMCP command bus", () => {
+  it("supports manual WebMCP execution when metadata is omitted", async () => {
+    const store = new SandboxStore();
+    await store.hydrateShowcase();
+    store.reset();
+    const tool = descriptorMap(store).get("get_factory_snapshot");
+
+    const result = await tool?.execute({});
+
+    expect(result).toMatchObject({ status: "ok", code: "OK", request_id: null });
+  });
+
   it("executes the complete inspect-create-change-simulate-compare flow and updates visible state", async () => {
     const store = new SandboxStore();
     await store.hydrateShowcase();

@@ -43,55 +43,54 @@ jobs:
 
           store_path = Path("src/app/store.ts")
           store_text = store_path.read_text(encoding="utf-8")
-          old_barrier = '''  async awaitVisibleCommit() {
-            const schedule = typeof requestAnimationFrame === "function"
-              ? requestAnimationFrame
-              : (callback: FrameRequestCallback) => globalThis.setTimeout(() => callback(0), 0);
-            await new Promise<void>((resolve) => schedule(() => schedule(() => resolve())));
-          }
-          '''
-          new_barrier = '''  async awaitVisibleCommit() {
-            // A hidden document cannot produce a meaningful visible paint. Domain state
-            // is already committed, so the presentation barrier must not hold the tool
-            // response open until the tab becomes visible again.
-            if (
-              typeof document !== "undefined" &&
-              document.visibilityState !== "visible"
-            ) {
-              return;
-            }
+          method_start = store_text.find("  async awaitVisibleCommit() {")
+          tail_marker = "\n  }\n}\n\nexport const sandboxStore"
+          method_tail = store_text.find(tail_marker, method_start)
+          if method_start == -1 or method_tail == -1:
+              raise SystemExit("Could not isolate SandboxStore.awaitVisibleCommit().")
+          method_end = method_tail + len("\n  }")
+          current_method = store_text[method_start:method_end]
+          if "const schedule = typeof requestAnimationFrame" not in current_method:
+              raise SystemExit("awaitVisibleCommit() no longer matches the vulnerable implementation.")
 
-            if (typeof requestAnimationFrame !== "function") {
-              await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
-              return;
-            }
-
-            // Prefer two frames so React can commit and paint, but bound the wait in
-            // case the host throttles or suppresses animation frames.
-            await new Promise<void>((resolve) => {
-              let settled = false;
-              let fallbackId: ReturnType<typeof globalThis.setTimeout> | undefined;
-
-              const finish = () => {
-                if (settled) return;
-                settled = true;
-                if (fallbackId !== undefined) {
-                  globalThis.clearTimeout(fallbackId);
-                }
-                resolve();
-              };
-
-              fallbackId = globalThis.setTimeout(finish, 300);
-              requestAnimationFrame(() => requestAnimationFrame(finish));
-            });
-          }
-          '''
-          store_text = replace_once(
-              store_text,
-              old_barrier,
-              new_barrier,
-              "visible-commit barrier",
-          )
+          new_barrier = "\n".join([
+              "  async awaitVisibleCommit() {",
+              "    // A hidden document cannot produce a meaningful visible paint. Domain state",
+              "    // is already committed, so the presentation barrier must not hold the tool",
+              "    // response open until the tab becomes visible again.",
+              "    if (",
+              "      typeof document !== \"undefined\" &&",
+              "      document.visibilityState !== \"visible\"",
+              "    ) {",
+              "      return;",
+              "    }",
+              "",
+              "    if (typeof requestAnimationFrame !== \"function\") {",
+              "      await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));",
+              "      return;",
+              "    }",
+              "",
+              "    // Prefer two frames so React can commit and paint, but bound the wait in",
+              "    // case the host throttles or suppresses animation frames.",
+              "    await new Promise<void>((resolve) => {",
+              "      let settled = false;",
+              "      let fallbackId: ReturnType<typeof globalThis.setTimeout> | undefined;",
+              "",
+              "      const finish = () => {",
+              "        if (settled) return;",
+              "        settled = true;",
+              "        if (fallbackId !== undefined) {",
+              "          globalThis.clearTimeout(fallbackId);",
+              "        }",
+              "        resolve();",
+              "      };",
+              "",
+              "      fallbackId = globalThis.setTimeout(finish, 300);",
+              "      requestAnimationFrame(() => requestAnimationFrame(finish));",
+              "    });",
+              "  }",
+          ])
+          store_text = store_text[:method_start] + new_barrier + store_text[method_end:]
           store_path.write_text(store_text, encoding="utf-8")
 
           test_path = Path("src/app/store.test.ts")
@@ -102,43 +101,44 @@ jobs:
               'import { describe, expect, it, vi } from "vitest";',
               "Vitest import",
           )
-          test_block = '''
-
-            it("bounds the visibility barrier when animation frames do not fire", async () => {
-              vi.useFakeTimers();
-              const animationFrame = vi.fn(() => 1);
-              vi.stubGlobal("requestAnimationFrame", animationFrame);
-
-              try {
-                const pending = new SandboxStore().awaitVisibleCommit();
-                await vi.advanceTimersByTimeAsync(300);
-
-                await expect(pending).resolves.toBeUndefined();
-                expect(animationFrame).toHaveBeenCalledTimes(1);
-              } finally {
-                vi.unstubAllGlobals();
-                vi.useRealTimers();
-              }
-            });
-
-            it("skips the visibility barrier when the document is hidden", async () => {
-              const animationFrame = vi.fn(() => 1);
-              vi.stubGlobal("document", { visibilityState: "hidden" });
-              vi.stubGlobal("requestAnimationFrame", animationFrame);
-
-              try {
-                await expect(new SandboxStore().awaitVisibleCommit()).resolves.toBeUndefined();
-                expect(animationFrame).not.toHaveBeenCalled();
-              } finally {
-                vi.unstubAllGlobals();
-              }
-            });
-          '''
+          if "bounds the visibility barrier when animation frames do not fire" in test_text:
+              raise SystemExit("Visibility barrier regression tests already exist.")
+          test_block = "\n\n" + "\n".join([
+              '  it("bounds the visibility barrier when animation frames do not fire", async () => {',
+              "    vi.useFakeTimers();",
+              "    const animationFrame = vi.fn(() => 1);",
+              '    vi.stubGlobal("requestAnimationFrame", animationFrame);',
+              "",
+              "    try {",
+              "      const pending = new SandboxStore().awaitVisibleCommit();",
+              "      await vi.advanceTimersByTimeAsync(300);",
+              "",
+              "      await expect(pending).resolves.toBeUndefined();",
+              "      expect(animationFrame).toHaveBeenCalledTimes(1);",
+              "    } finally {",
+              "      vi.unstubAllGlobals();",
+              "      vi.useRealTimers();",
+              "    }",
+              "  });",
+              "",
+              '  it("skips the visibility barrier when the document is hidden", async () => {',
+              "    const animationFrame = vi.fn(() => 1);",
+              '    vi.stubGlobal("document", { visibilityState: "hidden" });',
+              '    vi.stubGlobal("requestAnimationFrame", animationFrame);',
+              "",
+              "    try {",
+              "      await expect(new SandboxStore().awaitVisibleCommit()).resolves.toBeUndefined();",
+              "      expect(animationFrame).not.toHaveBeenCalled();",
+              "    } finally {",
+              "      vi.unstubAllGlobals();",
+              "    }",
+              "  });",
+          ])
           closing = "\n});\n"
-          index = test_text.rfind(closing)
-          if index == -1:
+          closing_index = test_text.rfind(closing)
+          if closing_index == -1:
               raise SystemExit("Could not find SandboxStore describe closing marker.")
-          test_text = test_text[:index] + test_block + test_text[index:]
+          test_text = test_text[:closing_index] + test_block + test_text[closing_index:]
           test_path.write_text(test_text, encoding="utf-8")
 
           readiness_path = Path("docs/SUBMISSION_READINESS.md")

@@ -2,6 +2,8 @@
 
 **A deterministic factory decision lab where a human and a browser agent replan the same live system together.**
 
+[Open the live application →](https://webmcp-challenge-seven.vercel.app)
+
 ![Agentic Sandbox precision-blueprint interface](docs/agentic-sandbox-desktop.png)
 
 Agentic Sandbox is built for the [OpenAI WebMCP Challenge](https://openai.com/webmcp-challenge/). It is not a chatbot pasted onto a dashboard. The page exposes a small, typed tool surface over the same versioned command path used by the visible interface. An agent can inspect the line, create alternatives, apply bounded settings, run the deterministic simulator, and compare receipts. A human can change the rules mid-flow by locking Packaging; stale agent work then fails closed and the new constraint is visible to both sides.

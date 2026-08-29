@@ -49,7 +49,7 @@ WebMCP / OpenAI Site Tools, React 19, TypeScript, Vite, Vitest, Web Crypto SHA-2
 
 ## Evaluator links and reset
 
-- Live application: `ADD_PUBLIC_HTTPS_URL`
+- Live application: `https://webmcp-challenge-seven.vercel.app`
 - Source repository: https://github.com/Kevxn97/webmcp-challenge
 - Public demo video: `ADD_PUBLIC_YOUTUBE_URL`
 

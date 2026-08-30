@@ -51,7 +51,7 @@ WebMCP / OpenAI Site Tools, React 19, TypeScript, Vite, Vitest, Web Crypto SHA-2
 
 - Live application: `https://webmcp-challenge-seven.vercel.app`
 - Source repository: https://github.com/Kevxn97/webmcp-challenge
-- Public demo video: `ADD_PUBLIC_YOUTUBE_URL`
+- Public demo video: https://www.youtube.com/watch?v=3KwBtJU9fow
 
 The landing page intentionally opens on the completed showcase. To replay the signature flow, click **Reset demo** once and confirm that Packaging is unlocked, Scenario A and Scenario B are both **Not run**, and the header says **WebMCP ready**.
 

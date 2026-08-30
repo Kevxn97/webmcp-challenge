@@ -1,8 +1,8 @@
 # Submission readiness
 
-Status date: 2026-08-29
+Status date: 2026-08-30
 
-Agentic Sandbox is technically implemented, locally self-contained, publicly deployed, and verified through ChatGPT Work's Cloud Browser against the live URL. The remaining blockers are the public demo video and the final Devpost submission, not core product behavior.
+Agentic Sandbox is technically implemented, locally self-contained, publicly deployed, verified through ChatGPT Work's Cloud Browser against the live URL, and documented with a public demo video. The remaining blocker is the final Devpost submission, not core product behavior.
 
 ## Official challenge gate
 
@@ -17,7 +17,7 @@ The OpenAI WebMCP Challenge scores WebMCP Leverage, Execution, Potential Impact,
 | Deterministic evidence | Ready | Versioned SHA-256 receipts, exact constraint operands, conservation checks, and a lock-bound upper-limit proof. |
 | Automated verification | Ready | GitHub Actions runs `npm ci` followed by the complete `npm run verify` gate; the current checkout passes 84 Vitest tests and 5 Sites tests. |
 | Public HTTPS deployment | Ready | `https://webmcp-challenge-seven.vercel.app` loads without authentication and serves the same hashed JS/CSS assets as the current `main` build. |
-| Public demo video | Pending | Record the flow in `docs/DEMO_SCRIPT.md`, upload it publicly, and replace `ADD_PUBLIC_YOUTUBE_URL`. |
+| Public demo video | Ready | The public 2:54 YouTube demo includes audio and visible Site Tool calls: `https://www.youtube.com/watch?v=3KwBtJU9fow`. |
 | Judge access to source | Ready | The repository is public and GitHub detects the MIT license. |
 | Final WebMCP host replay | Ready | The exact reset, two-scenario, human-lock, stale-write, re-read, and locked-replan flow passed against the public deployment in ChatGPT Work's Cloud Browser on 2026-08-29. |
 
@@ -47,9 +47,9 @@ A release candidate is submission-ready only when all of the following are true:
 - [x] Locking Packaging increments the visible revision and marks prior scenarios stale.
 - [x] Reusing pre-lock revisions with a fresh request ID returns `STALE_FACTORY` and mutates nothing.
 - [x] A fresh locked replan preserves Packaging and produces the visible `9252 < 10937` infeasibility proof.
-- [ ] The demo video is public, under three minutes, and shows actual Site Tool calls.
+- [x] The demo video is public, under three minutes, and shows actual Site Tool calls.
 - [x] The live application URL is present in `docs/SUBMISSION.md`.
-- [ ] The public YouTube URL replaces `ADD_PUBLIC_YOUTUBE_URL` in `docs/SUBMISSION.md`.
+- [x] The public YouTube URL replaces `ADD_PUBLIC_YOUTUBE_URL` in `docs/SUBMISSION.md`.
 - [x] The repository is public and GitHub detects the MIT license.
 
 ## Do not add before submission

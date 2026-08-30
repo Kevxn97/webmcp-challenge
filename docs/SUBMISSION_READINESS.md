@@ -2,7 +2,7 @@
 
 Status date: 2026-08-30
 
-Agentic Sandbox is technically implemented, locally self-contained, publicly deployed, verified through ChatGPT Work's Cloud Browser against the live URL, and documented with a public demo video. The remaining blocker is the final Devpost submission, not core product behavior.
+Agentic Sandbox is technically implemented, locally self-contained, publicly deployed, verified through ChatGPT Work's Cloud Browser against the live URL, documented with a public demo video, and submitted to the WebMCP Challenge on Devpost.
 
 ## Official challenge gate
 
@@ -20,6 +20,7 @@ The OpenAI WebMCP Challenge scores WebMCP Leverage, Execution, Potential Impact,
 | Public demo video | Ready | The public 2:54 YouTube demo includes audio and visible Site Tool calls: `https://www.youtube.com/watch?v=3KwBtJU9fow`. |
 | Judge access to source | Ready | The repository is public and GitHub detects the MIT license. |
 | Final WebMCP host replay | Ready | The exact reset, two-scenario, human-lock, stale-write, re-read, and locked-replan flow passed against the public deployment in ChatGPT Work's Cloud Browser on 2026-08-29. |
+| Devpost submission | Submitted | Devpost reports `Submitted` and `5/5 steps done`; the public entry is `https://devpost.com/software/agentic-sandbox`. |
 
 ## Verified live host replay
 
@@ -51,7 +52,8 @@ A release candidate is submission-ready only when all of the following are true:
 - [x] The live application URL is present in `docs/SUBMISSION.md`.
 - [x] The public YouTube URL replaces `ADD_PUBLIC_YOUTUBE_URL` in `docs/SUBMISSION.md`.
 - [x] The repository is public and GitHub detects the MIT license.
+- [x] The Devpost entry is submitted and publicly available at `https://devpost.com/software/agentic-sandbox`.
 
-## Do not add before submission
+## Do not add to the submitted challenge build
 
 Avoid scope that weakens the signature interaction: an embedded chatbot, generic multi-factory management, real machine writes, authentication, a model backend, or a large catalogue of weak tools. The challenge build wins by making one human-agent disagreement unusually clear and trustworthy.

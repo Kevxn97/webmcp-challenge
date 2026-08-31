@@ -126,11 +126,25 @@ Everything runs locally in the page. There is no model API key, backend, account
 - The baseline and stored simulation receipts are immutable.
 - Normal human controls remain available when WebMCP is absent.
 
+## Agent-native system direction
+
+The submitted challenge build remains the verified `factory-tools/v1` profile. A separate target design raises the public interface from low-level scenario CRUD to an intent-level decision loop with explicit time, authority, currentness, immutable lineage, receipt reuse, policy-aware comparison, deterministic recovery, and progressive evidence.
+
+Start here:
+
+- [Agent-native system design](docs/AGENT_SYSTEM_DESIGN.md)
+- [Normative agent contract](docs/AGENT_CONTRACT.md)
+- [Agent ergonomics implementation plan](docs/AGENT_ERGONOMICS_IMPLEMENTATION_PLAN.md)
+- [Agent trajectory evaluation plan](docs/AGENT_TRAJECTORY_EVALS.md)
+
+The target keeps exactly six public tools while reducing routine orchestration: planning context, state delta, frontier search, transactional evaluation, scenario comparison, and progressive evidence. The live challenge profile stays frozen until the replacement profile passes its own unit, trajectory, visual, and live-host acceptance gates.
+
 ## Challenge material
 
 - [Product and truth brief](docs/PRODUCT_BRIEF.md)
 - [Three-minute demo script](docs/DEMO_SCRIPT.md)
 - [Submission copy](docs/SUBMISSION.md)
+- [Submission readiness](docs/SUBMISSION_READINESS.md)
 - [Asset provenance](docs/ASSET_PROVENANCE.md)
 - [Visual QA report](design-qa.md)
 - [Selected visual target](docs/visual-target-precision-blueprint.png)

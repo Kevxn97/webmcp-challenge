@@ -20,7 +20,7 @@ Before recording, load the deployed HTTPS URL in a supported WebMCP host and cli
 
 **Narration:**
 
-“This is not DOM automation and there is no embedded chatbot. The top-level page exposes six narrow WebMCP tools. They read and mutate the same command bus as the visible UI, with bounded schemas, optimistic revisions, idempotency, and cancellation.”
+“This is not DOM automation and there is no embedded chatbot. The top-level page exposes six narrow WebMCP tools over the exact same live state as the visible interface. Every write is bounded, versioned, and visible.”
 
 ## 0:23–1:13 — Agent creates evidence
 
@@ -66,13 +66,13 @@ Before recording, load the deployed HTTPS URL in a supported WebMCP host and cli
 
 **Prompt:**
 
-> Now re-read the factory. Packaging may not be changed. Replan using only unlocked controls, simulate one shift, and explain the result from the deterministic evidence.
+> Now re-read the factory. Packaging is human-locked from tick 16. Preserve Packaging and every pre-shift choice unchanged. Apply only `mixer_speed_bps: 9500`, simulate one shift, and explain the result from the deterministic evidence.
 
 **Visual:** Show the fresh snapshot, the new plan, and the simulation result.
 
 **Narration:**
 
-“The agent must re-read and replan around the human constraint. It can still change the supplier and mixer, but Packaging remains outside its authority.”
+“The agent must re-read and replan around the human constraint. It can still change a genuinely available runtime control such as Mixer, while Packaging and phase-closed pre-shift choices remain unchanged.”
 
 ## 2:18–2:35 — Prove infeasibility
 
@@ -97,5 +97,6 @@ Before recording, load the deployed HTTPS URL in a supported WebMCP host and cli
 - Deployed HTTPS URL loaded in ChatGPT's built-in browser.
 - Site Tools list visible once; Recently Used visible during calls.
 - Capture the human lock, stale receipt, `STALE_FACTORY` rejection, re-read, and exact `9252 < 10937` proof.
+- In the locked replan, change only Mixer; do not re-submit Supplier, changeover, or calibration as if they were still phase-available.
 - Keep browser zoom fixed, but use editorial crops for the full blueprint, split app/Site Tools view, comparison, structured error, inequality, receipt, and ledger.
 - End on the product, not a slide.

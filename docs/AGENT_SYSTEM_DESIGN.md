@@ -1,187 +1,347 @@
 # Agentic Sandbox agent-system design
 
-Status: normative target design for challenge-safe evolution of the Agentic Sandbox WebMCP interface.
+Status: normative target architecture for challenge-safe evolution of the Agentic Sandbox WebMCP interface.
 
-`docs/PRODUCT_BRIEF.md` defines the product promise. This document defines the agent-facing system contract. `docs/AGENT_EVAL_PLAN.md` defines how that contract is tested. No target behavior in this document should be described as implemented until its code, tests, live replay, and visible UI evidence all agree.
+Document roles:
+
+- `docs/PRODUCT_BRIEF.md` defines the product promise and participant responsibilities.
+- This document defines the durable agent-facing system model and contracts.
+- `docs/AGENT_SYSTEM_HARDENING_PLAN.md` maps the audited current runtime to this target in implementation order.
+- `docs/AGENT_EVAL_PLAN.md` defines the trajectories and release gates that prove the contract.
+- `docs/DEMO_SCRIPT.md` freezes the OpenAI WebMCP Challenge story.
+
+No target behavior in this document is an implementation claim until code, generated parity tests, visible UI evidence, and a public ChatGPT Site Tools replay agree.
 
 ## North star
 
-Agentic Sandbox is not a dashboard with tools attached. It is a shared, versioned decision protocol with two projections over one application state:
+Agentic Sandbox is not a dashboard with tools attached. It is a small shared decision protocol with two first-class projections over one canonical system:
 
-- a human projection that makes intent, authority, evidence, and intervention visible;
-- an agent projection that makes the same state legible, actionable, and verifiable through six narrow WebMCP tools.
+- a human projection that makes intent, authority, time, evidence, and intervention visible;
+- an agent projection that makes the same system legible, actionable, copyable, and verifiable through six narrow WebMCP tools.
 
-Before every write, an agent should be able to answer seven questions without guessing:
+Before every write, an agent should be able to answer without guessing:
 
-1. What outcome is the human asking for, and what counts as success?
-2. What factory state and authority epoch am I acting on?
-3. Which controls exist, what do their values mean, and which are currently writable?
-4. What evidence already exists, and which evidence is still current?
-5. Which exact preconditions can I copy into the next call?
-6. Did the last operation commit, and what changed because of it?
-7. What is the cheapest safe next action that reduces uncertainty or advances the decision?
+1. What decision is the human asking me to support?
+2. What exact outcome and hard constraints define success?
+3. What model, mission, authority, and effective time am I acting on?
+4. Which controls exist, what do their values mean, and which are available now?
+5. What evidence already exists, where did it come from, and is it usable for the current decision?
+6. Which exact preconditions can I copy into the next call?
+7. Is my requested change a legal mutation, a semantic no-op, or an unavailable action?
+8. Did the previous operation commit, and what changed because of it?
+9. What is the cheapest safe next action that reduces uncertainty or advances the decision?
+10. What claim is justified by the evidence: feasible, dominated, best evaluated, historical, invalid, or proven infeasible?
 
-The system is agent-intuitive when those answers are obvious from tool metadata and results. It is agent-ergonomic when the answers require little memory, arithmetic, payload reconstruction, or redundant reading. It is agent-accretive when every successful interaction leaves durable state or evidence that future calls can reuse.
+The system is:
+
+- **agent-intuitive** when tool metadata and results make the correct next action obvious;
+- **agent-ergonomic** when the action requires little memory, arithmetic, translation, or redundant reading;
+- **agent-accretive** when each interaction leaves durable state or evidence that later turns can reuse.
 
 ## Preserve essential friction; remove accidental friction
 
-The challenge build should not collapse the workflow into an opaque `optimize_factory` tool. Some friction is the product because it preserves human authority and inspectable reasoning.
+The challenge build should not collapse into an opaque `optimize_factory`, frontier-search, or batch-evaluation tool. Some steps are the product because they preserve authority and make reasoning inspectable.
 
-| Preserve: essential decision friction | Remove: accidental interface friction |
+| Preserve: meaningful decision boundary | Remove: accidental interface burden |
 | --- | --- |
-| Read current state before acquiring authority to write | Renaming returned revisions before they can be reused |
-| Explicit scenario branches | Hidden control ranges, timing rules, and resource ownership |
-| Optimistic concurrency and stale-write rejection | Repeating an unchanged baseline on every recovery read |
-| Human-only locks | Ambiguous lock scope or effective time |
-| Deterministic simulation rather than model-authored KPIs | Errors that identify only the first mismatch and omit recovery guidance |
-| Immutable receipts and currentness checks | Recomputing exact targets, cost caps, or comparison dominance in model prose |
-| A visible human interruption | Carrying stale scenario overrides into a supposedly clean replan |
+| Read current state before writing | Renaming returned revisions before reuse |
+| Explicit scenario hypotheses | Hidden ranges, units, ownership, phase, or lock scope |
+| Explicit mutation before evaluation | Same-value writes that create revision churn |
+| Deterministic simulation | Discovering phase rules only through failed evaluation |
+| Comparison of immutable receipts | Model-side arithmetic for targets, slack, and dominance |
+| Human-only lock intervention | Tiny or ambiguous lock scope and effective time |
+| One intentional stale rejection | Accidental stale calls and incomplete recovery errors |
+| Fresh read and clean post-lock branch | Carrying pre-lock Packaging overrides into recovery |
+| Current proof | Historical or invalid evidence silently winning |
 
-The design goal is therefore not “fewest possible calls at any cost.” It is **fewest avoidable calls while retaining every meaningful state, authority, and evidence boundary**.
+The goal is **fewest avoidable calls while retaining every meaningful intent, authority, hypothesis, mutation, evaluation, conflict, recovery, and proof boundary**.
+
+## System-wide axioms
+
+### Axiom 1 — one semantic meaning
+
+Every public control has one canonical unit, domain, resource owner, application phase, evaluator operation, and lock scope. Schema, runtime validation, command availability, evaluator behavior, UI, tests, and documentation derive from or are checked against that definition.
+
+An agent must never learn a system rule by passing one layer and failing another.
+
+### Axiom 2 — zero hidden state
+
+A Site Tool outcome cannot depend on unexposed presentation state such as selected scenario column, open modal, viewport, focus, hover, scroll, render order, Strict Mode, or HMR.
+
+Every human action that changes legal agent behavior advances an exposed authority or decision-epoch identity.
+
+### Axiom 3 — authority is explicit
+
+Human locks are typed authority objects, not decorative booleans. They state owner, resource, blocked controls, revision, and effective simulation time. The agent has no lock, unlock, force, approve, or override capability.
+
+### Axiom 4 — time is explicit
+
+Collaborative planning time and simulated operational time are separate clocks. A visible lock event occurring now may be modeled as effective at a specified tick in a counterfactual shift; the system must not blur those statements.
+
+### Axiom 5 — evidence is source-bound
+
+A receipt is immutable, but its usability is relational. Currentness depends on its source model, mission, authority, time, ontology, evaluator, and scenario identity. Historical evidence remains truthful for its source and cannot silently become a current recommendation.
+
+### Axiom 6 — truth dimensions are orthogonal
+
+Execution validity, source currentness, hard-constraint feasibility, proof state, and decision relation are independent. A convenient summary may be derived from them but cannot hide one axis behind another.
+
+### Axiom 7 — labels are not instructions
+
+Human and agent supplied names are untrusted display text. They never influence routing, validation, ownership, evaluator behavior, currentness, comparison policy, or selection.
+
+### Axiom 8 — successful use compounds
+
+A valid interaction creates or refreshes a reusable artifact: decision context, scenario head, committed transition, receipt, comparison, or structured recovery state. Important evidence is never silently overwritten because a UI slot changes.
 
 ## The linked abstraction tower
 
 ```text
-Human intent
-    │
-    ▼
+Human intent and intervention
+            │
+            ▼
 1. Mission contract
-   Exact objective, hard constraints, tie-breakers, derived thresholds
-    │
-    ▼
-2. Decision context
-   Current factory state, operational clock, bottleneck, evidence index
-    │
-    ▼
-3. Authority epoch
-   Factory version + factory revision + lock revision + human lock contract
-    │
-    ▼
-4. Capability map
-   Controls, units, legal values, timing, resource ownership, writability
-    │
-    ▼
-5. Scenario lineage
-   Immutable hypothesis head bound to one authority epoch
-    │
-    ▼
-6. Idempotent command
-   Narrow mutation + exact preconditions + atomic commit result
-    │
-    ▼
-7. Deterministic receipt
-   Content-addressed consequences, constraints, invariants, diagnostics, proof
-    │
-    ▼
-8. Evidence graph
-   Historical and current receipts, comparisons, dominance, provenance
-    │
-    ▼
-9. Shared decision projection
-   The same revisions and evidence rendered to human and agent
+   Objective · hard constraints · exact derived thresholds · selection policy
+            │
+            ▼
+2. Semantic kernel
+   Resources · controls · units · domains · ownership · phases · lock scope
+            │
+            ▼
+3. Model and decision context
+   Factory model · baseline · clock · bottlenecks · evidence index
+            │
+            ▼
+4. Authority epoch
+   Human locks · blocked controls · effective time · authority revision
+            │
+            ▼
+5. Capability map
+   Current values · availability · reasons · legal actions · continuation
+            │
+            ▼
+6. Scenario lineage
+   Immutable hypothesis head · normalized overrides · effective controls · parent
+            │
+            ▼
+7. Idempotent command
+   Narrow intent · exact preconditions · atomic commit · read-your-write result
+            │
+            ▼
+8. Deterministic receipt
+   Canonical input · exact counters · constraints · invariants · proof · source binding
+            │
+            ▼
+9. Evidence and selection graph
+   Currentness · comparisons · dominance · Pareto relation · policy-bounded claim
+            │
+            ▼
+10. Shared projections
+    WebMCP and human UI render the same consequential state and evidence
 ```
 
-Human locks cut vertically through layers 3–9. They change the authority epoch, narrow the capability map, make prior scenario evidence historical, and force a new branch. They never rewrite old evidence.
+Human locks cut vertically through layers 4–10. They narrow capability, make prior scenario evidence historical, require a clean branch, and affect comparison eligibility. They never rewrite old receipts.
 
-## The agent operating loop
+## Identity model
+
+Keep the existing compatibility revisions, but do not conceptually collapse four different identities.
+
+### Model identity
+
+Represents the deterministic factory definition: assets, baseline controls, deliveries, physical constants, and evaluator assumptions.
+
+A permission change does not pretend that the physical factory model changed.
+
+### Authority identity
+
+Represents the admissible action space: human locks, blocked controls, effective time, and authority revision.
+
+### Workspace identity
+
+Represents collaborative presentation and planning artifacts: scenario heads, A/B display pins, selected UI state, comparisons, and ledger events.
+
+Workspace selection may change presentation; it must not change tool semantics.
+
+### Evidence identity
+
+Represents the assumptions required to interpret a receipt: canonical scenario input, source model, mission operands, authority/time, semantic-kernel version, and evaluator version.
+
+A compact `decision_epoch_token` may compose model, mission, authority, effective-time, ontology, and evaluator identities. It must exclude irrelevant UI state.
+
+## Agent operating loop
 
 ### 1. Orient once
 
-Call `get_factory_snapshot` first. One response should be enough to understand:
+Call `get_factory_snapshot` first. One result should contain enough authoritative context to understand:
 
-- the exact mission and derived success thresholds;
-- the current state/authority token;
-- the current controls and legal action space;
-- active human locks, including blocked fields and effective time;
-- the baseline, binding bottleneck, and existing evidence;
+- exact mission and derived thresholds;
+- declared selection policy and allowed claim level;
+- current model and authority identities;
+- planning and simulation-time assumptions;
+- current controls, units, domains, owners, phases, and availability;
+- active human locks with blocked fields and effective time;
+- baseline metrics and bottleneck evidence;
+- current and historical evidence index;
 - copy-ready preconditions for the next write.
 
-The agent should not need to inspect the visible DOM to recover any operational fact already owned by the application.
+The agent should not inspect the DOM or infer a rule from a failed command when the application already owns that fact.
 
-### 2. Form an explicit hypothesis
+### 2. Form one coherent hypothesis
 
-Create a scenario for one coherent causal idea, not a bag of unrelated changes. The scenario is a named, versioned hypothesis bound to the current factory version and lock revision.
+A scenario represents one causal idea, not a bag of unrelated changes.
 
 Examples:
 
-- “Remove Packaging bottleneck within cost cap.”
+- “Remove the Packaging bottleneck within the cost cap.”
 - “Test whether supplier expedite adds output or only cost.”
-- “Replan around human-locked Packaging using only upstream controls.”
+- “Replan around human-locked Packaging using only currently available controls.”
 
-### 3. Apply bounded controls
+### 3. Create a clean scenario head
 
-Apply absolute settings through `apply_scenario_changes`. The tool should make three things unambiguous:
+`create_scenario` binds the hypothesis to the current decision epoch. UI pins A and B are presentation metadata, not durable identity.
 
-- which fields were requested;
-- which fields actually committed;
-- which continuation object can be copied into simulation.
+Scenario allocation must be deterministic and independent of which column the human selected. A full workspace follows a documented replacement rule or returns an explicit capacity response.
 
-A write response should never be a bare acknowledgement.
+### 4. Apply bounded controls
 
-### 4. Produce evidence
+`apply_scenario_changes` receives absolute values. Before commit, the command layer:
 
-Run `run_factory_simulation`. The response should expose the smallest complete decision receipt:
+1. validates the closed input shape;
+2. resolves each field through the semantic kernel;
+3. normalizes values equal to effective state as semantic no-ops;
+4. verifies availability of changed controls;
+5. verifies factory, scenario, and lock preconditions;
+6. commits all changed fields atomically or none.
 
-- immutable run and input identifiers;
-- source currentness;
-- exact mission constraints and slack;
-- output, cost, defect, and asset results;
-- remaining bottlenecks;
-- accepted and rejected operations;
-- an infeasibility proof when one exists;
-- continuation metadata for any safe follow-up.
+The result distinguishes requested, changed, no-op, and blocked fields and returns copy-ready simulation continuation.
 
-Detailed tick evidence remains stored and inspectable, but the default response should not force the agent to ingest 64 ticks when a compact receipt proves the decision.
+### 5. Produce deterministic evidence
 
-### 5. Discriminate, do not merely list
+`run_factory_simulation` evaluates the exact scenario head and stores a content-addressed receipt. The compact result contains decision-complete evidence; full tick detail remains stored for progressive inspection.
 
-Call `compare_simulation_runs` with the baseline as the first, explicitly documented anchor and candidate receipts after it. The deterministic comparison layer should identify:
+### 6. Discriminate, do not merely list
 
-- feasible and infeasible runs;
-- exact deltas from the anchor;
-- dominated alternatives;
-- the Pareto frontier;
-- the lowest-cost feasible run under a declared tie-break rule.
+`compare_simulation_runs` names its baseline anchor, validates source currentness and execution validity, computes exact deltas and dominance, and applies only a declared selection policy.
 
-The model then explains the decision. It should not be responsible for silently performing exact arithmetic that the application can compute deterministically.
+The model explains the result. It does not secretly reproduce exact arithmetic or promote “best among evaluated” to “globally optimal.”
 
-### 6. Treat conflict as information
+### 7. Treat conflict as information
 
-When the human changes a lock, the next stale write should fail visibly and atomically. The system must not auto-refresh and silently replay the command because that would erase the challenge’s signature interaction.
+When the human changes authority, one deliberate stale write fails atomically. The system must not refresh and replay behind the human's back.
 
-The error should say:
+The error states:
 
 - `committed: false`;
-- which expected and current preconditions differ;
+- every mismatched expected/current precondition;
 - which evidence became historical;
-- which read tool restores authority;
-- whether a fresh scenario branch is required.
+- the correct recovery read;
+- whether a fresh request ID and fresh scenario are required.
 
-### 7. Re-read incrementally and branch cleanly
+### 8. Re-read and branch cleanly
 
-After an authority change, the agent should re-read the factory and create a new scenario bound to the new epoch. It should not mutate a scenario whose base factory version predates the human decision.
+After an authority change, the agent reacquires the current capability map and creates a fresh scenario from current effective controls. It does not merge new unlocked controls into a head that still contains inadmissible pre-lock Packaging overrides.
 
-The old scenario remains part of the evidence graph. The new scenario may cite it as a parent hypothesis, but it starts from current controls and contains only currently admissible overrides.
+### 9. Explain only from eligible evidence
 
-### 8. Explain only from current evidence
+A final recommendation names the scenario version and receipt, states source currentness and execution validity, quotes exact constraint operands, names the comparison policy, and uses the strongest justified epistemic label—no stronger.
 
-A final recommendation must name the receipt used, state whether its source is current, quote exact constraint operands, and distinguish:
+## Semantic-kernel contract
 
-- feasible;
-- not feasible among attempted scenarios;
-- mathematically proven infeasible under the active lock.
-
-Those are different epistemic states and must never be collapsed into one label.
-
-## Agent-facing contracts
-
-### Decision context contract
-
-The target `get_factory_snapshot` result should add a compact decision context without removing the current fields:
+The target implementation owns a versioned control registry conceptually shaped like:
 
 ```json
 {
-  "state_token": "factory-v5:f5:l3:e12",
+  "control_id": "packaging_speed_bps",
+  "resource_id": "packaging",
+  "label": "Packaging speed",
+  "value_type": "integer",
+  "unit": "basis_points_of_nameplate",
+  "domain": { "minimum": 5000, "maximum": 10000 },
+  "application_phase": "runtime",
+  "operation_kind": "SET_PACKAGING_SPEED",
+  "operation_value_field": "valueBps",
+  "lock_scope": "Packaging",
+  "baseline_value": 7500
+}
+```
+
+For the current challenge vocabulary:
+
+| Control | Resource | Phase | Packaging lock |
+| --- | --- | --- | --- |
+| `mixer_speed_bps` | Mixer | runtime | not covered |
+| `packaging_speed_bps` | Packaging | runtime | covered |
+| `packaging_changeover_minutes` | Packaging | pre-shift | covered |
+| `packaging_calibration` | Packaging | pre-shift | covered |
+| `supplier_mode` | Supplier | pre-shift | not covered; phase may close |
+| `quality_rate_units_per_hour` | Quality Gate | runtime | not covered |
+| `warehouse_dock_units_per_hour` | Warehouse | runtime | not covered |
+
+Speed values are basis points of equipment nameplate; `10000 = 100%`. The canonical public and evaluator range is 5,000–10,000.
+
+## Capability-map contract
+
+A JSON Schema defines a general value domain. Current capability requires an availability projection:
+
+```json
+{
+  "control_id": "supplier_mode",
+  "resource_id": "supplier",
+  "current_value": "standard",
+  "domain": { "enum": ["standard", "expedite"] },
+  "application_phase": "pre_shift",
+  "availability": {
+    "status": "PHASE_CLOSED",
+    "reason_code": "PRE_SHIFT_ONLY",
+    "effective_tick": 16,
+    "may_preserve_current_value": true
+  }
+}
+```
+
+Allowed statuses:
+
+- `AVAILABLE`
+- `HUMAN_LOCKED`
+- `PHASE_CLOSED`
+- `UNSUPPORTED`
+
+An unavailable changed value is rejected before evaluator execution. An unavailable requested value already equal to the effective state is normalized as a no-op.
+
+## Time and human-lock contract
+
+The visible Packaging lock is a planning-time event. The current deterministic proof models its effect at simulation tick 16, or 240 minutes into the 64-tick shift.
+
+```json
+{
+  "lock_id": "lock-packaging-l3",
+  "authority": "human",
+  "resource": "Packaging",
+  "blocked_fields": [
+    "packaging_speed_bps",
+    "packaging_changeover_minutes",
+    "packaging_calibration"
+  ],
+  "planning_event_id": "event-19",
+  "simulation_effect": {
+    "effective_tick": 16,
+    "effective_elapsed_minutes": 240
+  },
+  "lock_revision": 3
+}
+```
+
+One domain constant drives the store, evaluator, proof, Site Tool output, UI, tests, README, and demo script.
+
+The product is a shared live **decision state**, not a live plant-control or telemetry surface.
+
+## Decision-context contract
+
+The target `get_factory_snapshot` result adds a compact context without removing compatibility fields:
+
+```json
+{
+  "decision_epoch_token": "epoch-5",
   "continuation": {
     "factory_version_id": "factory-v5",
     "expected_factory_revision": 5,
@@ -195,137 +355,94 @@ The target `get_factory_snapshot` result should add a compact decision context w
       "maximum_defect_fraction": "186/9300",
       "maximum_asset_count_delta": 0
     },
-    "tie_breakers": [
-      "fewest_constraint_violations",
-      "lowest_total_cost",
-      "fewest_changed_controls"
+    "selection_policy": [
+      "CURRENT_AND_VALID",
+      "ALL_HARD_CONSTRAINTS_PASS",
+      "MAX_GOOD_OUTPUT",
+      "MIN_TOTAL_COST",
+      "MIN_DEFECT_RATE",
+      "MIN_CHANGED_CONTROLS",
+      "CANONICAL_ID"
     ]
   },
-  "authority": {
-    "locks": [],
-    "writable_fields": [
-      "mixer_speed_bps",
-      "packaging_speed_bps",
-      "packaging_changeover_minutes",
-      "packaging_calibration",
-      "supplier_mode",
-      "quality_rate_units_per_hour",
-      "warehouse_dock_units_per_hour"
-    ]
-  },
+  "clock": {},
+  "authority": {},
   "control_catalog": [],
+  "baseline": {},
   "evidence_index": []
 }
 ```
 
-The continuation keys deliberately match write-input keys. The agent should be able to copy the object rather than translate names from memory.
+Continuation keys match write-input keys so the agent copies rather than translates state.
 
-### State token contract
+An optional future `known_state_token` may let the same tool return `full`, `delta`, or `not_modified` mode. A stale token informs recovery; it never authorizes an automatic replay.
 
-`state_token` is a compact cache and comparison key, not a replacement for visible revisions. It should encode or deterministically derive from:
-
-- factory version;
-- factory revision;
-- lock revision;
-- event revision.
-
-Every tool result should return the current state token. A stale token is evidence that the world changed, not permission to auto-retry.
-
-A later additive enhancement may let `get_factory_snapshot` accept `known_state_token`. The response can then return either:
-
-- `snapshot_mode: "not_modified"` with fresh continuation metadata; or
-- `snapshot_mode: "delta"` with changed authority, scenario heads, and evidence entries; or
-- `snapshot_mode: "full"` when the prior state cannot be safely reconstructed.
-
-This is the main resource-efficiency mechanism. It avoids hiding state transitions inside a mega-tool.
-
-### Capability-map contract
-
-Every mutable field should have one canonical definition shared by schema generation, runtime validation, simulation, lock enforcement, and documentation:
-
-```json
-{
-  "field": "packaging_speed_bps",
-  "resource": "Packaging",
-  "unit": "basis_points_of_nameplate",
-  "current_value": 7500,
-  "allowed": { "minimum": 5000, "maximum": 10000 },
-  "timing": "effective_at_command_tick",
-  "locked": false,
-  "lock_revision": 3
-}
-```
-
-The current implementation has one semantic seam that must be removed before claiming this contract: the public field is named `packaging_calibration`, while the engine currently assigns calibration to the Quality Gate resource. One canonical ownership model must drive both layers.
-
-### Human-lock contract
-
-A human lock is not a boolean UI decoration. It is an authority object:
-
-```json
-{
-  "lock_id": "lock-packaging-l3",
-  "authority": "human",
-  "resource": "Packaging",
-  "blocked_fields": [
-    "packaging_speed_bps",
-    "packaging_changeover_minutes",
-    "packaging_calibration"
-  ],
-  "effective_tick": 16,
-  "effective_elapsed_minutes": 240,
-  "lock_revision": 3
-}
-```
-
-The effective tick must come from one domain constant used by the store, simulator, proof, tool output, UI, and documentation. “Locked now” in the planning interface and “effective four hours into the simulated shift” are not interchangeable claims; both must be visible when that is the intended model.
-
-### Scenario contract
+## Scenario contract
 
 A scenario is an immutable lineage of hypothesis heads:
 
 ```json
 {
-  "scenario_id": "scenario-b",
-  "scenario_version_id": "scenario-b-v2",
-  "scenario_revision": 2,
-  "base_factory_version_id": "factory-v4",
-  "base_lock_revision": 2,
+  "scenario_id": "scenario-c",
+  "scenario_version_id": "scenario-c-v2",
+  "display_pin": "B",
   "parent_scenario_version_id": null,
-  "declared_overrides": {},
-  "effective_overrides": {},
-  "suppressed_overrides": [],
-  "source_is_current": true
+  "source_decision_epoch_token": "epoch-5",
+  "base_factory_version_id": "factory-v5",
+  "base_lock_revision": 3,
+  "requested_overrides": {},
+  "normalized_overrides": {},
+  "normalized_no_op_fields": [],
+  "effective_controls": {},
+  "currentness": {
+    "status": "CURRENT",
+    "usable_for_current_decision": true,
+    "invalidated_by": []
+  }
 }
 ```
 
 Rules:
 
-- UI markers `A` and `B` are display slots, not durable identities.
-- A scenario head is writable only while its base authority epoch is current.
-- A human authority change freezes the old head as historical evidence.
-- Recovery creates a fresh branch from the new epoch instead of carrying inadmissible overrides forward.
-- The tool surface remains at six tools; clean recovery is expressed through the existing `create_scenario` capability, not a new `rebase` tool.
+- creation begins from current effective controls;
+- no-op-only applies do not create a new head or clear a receipt;
+- authority changes freeze old heads as historical;
+- recovery creates a clean head under the new epoch;
+- display re-pinning never deletes evidence;
+- replacement/allocation is deterministic and independent of selected UI state.
 
-### Continuation contract
+## Continuation and command contract
 
-Every successful read or write should return a `continuation` object containing the exact fields required by the most likely next call:
+Every successful read or write returns the exact fields required by the most likely next call:
 
 ```json
 {
   "factory_version_id": "factory-v5",
   "expected_factory_revision": 5,
   "expected_lock_revision": 3,
-  "scenario_id": "scenario-b",
+  "scenario_id": "scenario-c",
   "expected_scenario_revision": 2
 }
 ```
 
-The continuation is advisory and inspectable. The command bus still verifies each field independently. It reduces transcription failures without weakening optimistic concurrency.
+A successful mutation additionally reports:
 
-### Error and recovery contract
+```json
+{
+  "committed": true,
+  "requested_fields": ["mixer_speed_bps", "supplier_mode"],
+  "changed_fields": ["mixer_speed_bps"],
+  "normalized_no_op_fields": ["supplier_mode"],
+  "blocked_fields": [],
+  "continuation": {}
+}
+```
 
-Expected errors are part of the protocol, not generic exceptions:
+A no-op-only request returns `committed: false`, preserves scenario and receipt identity, and still provides continuation.
+
+## Error and recovery contract
+
+Expected errors are protocol results, not generic exceptions:
 
 ```json
 {
@@ -333,7 +450,7 @@ Expected errors are part of the protocol, not generic exceptions:
   "status": "error",
   "code": "STALE_FACTORY",
   "request_id": "scenario-b-retry-02",
-  "message": "The factory authority epoch changed. No changes were applied.",
+  "message": "The decision authority changed. No scenario changes were applied.",
   "data": {
     "committed": false,
     "precondition_diff": {
@@ -343,39 +460,94 @@ Expected errors are part of the protocol, not generic exceptions:
       "current_lock_revision": 3
     },
     "recovery": {
-      "read_tool": "get_factory_snapshot",
+      "tool": "get_factory_snapshot",
+      "arguments": {},
       "fresh_scenario_required": true,
-      "reuse_request_id": false
+      "fresh_request_id_required": true
     }
   }
 }
 ```
 
-All expected write failures must state `committed: false`. If a command committed before a presentation-layer wait failed, the committed outcome remains authoritative and must not be rewritten as an error.
+All mismatches that can be safely disclosed are returned together. A command committed in the domain remains authoritative even if a later paint/visibility wait fails.
 
-### Receipt contract
+A future audit plane may record a rejected attempt, but it uses a separate audit revision and never makes `committed: false` ambiguous about operational or scenario state.
 
-A receipt is the evidence unit of the system. Its compact agent projection should include:
+## Receipt contract
 
-- `run_id`, `content_hash`, `input_hash`, `simulator_version`;
-- source factory/scenario/lock revisions and `source_is_current`;
+A receipt is the evidence unit. Its compact agent projection includes:
+
+- run ID, content hash, input hash, evaluator and energy-model versions;
+- source model, mission, authority/time, semantic-kernel, and scenario identities;
 - exact metrics and baseline deltas;
 - each hard constraint with `lhs`, `operator`, `rhs`, `unit`, `pass`, and exact slack;
 - remaining bottlenecks;
-- operation audit counts and blocked fields;
-- invariant status;
-- proof metadata and exact inequality when present.
+- accepted/rejected operation audit;
+- invariant results;
+- proof metadata and exact inequality;
+- five independent truth axes.
 
-No model-authored interpretation belongs inside the receipt. Human-readable explanations are downstream views over receipt facts.
+### Truth axes
 
-### Comparison contract
+```json
+{
+  "execution_validity": "VALID",
+  "currentness": {
+    "status": "CURRENT",
+    "source_decision_epoch_token": "epoch-5",
+    "current_decision_epoch_token": "epoch-5",
+    "invalidated_by": []
+  },
+  "hard_constraint_state": "VIOLATED",
+  "proof_state": "PROVEN_INFEASIBLE",
+  "decision_relation": "UNCOMPARED"
+}
+```
 
-The first `run_id` is the anchor and order is meaningful. The result should add a deterministic decision summary:
+Allowed conceptual values:
+
+- execution: `VALID`, `INVALID_OPERATIONS`, `INVALID_INVARIANTS`;
+- currentness: `CURRENT`, `HISTORICAL`;
+- constraints: `ALL_PASS`, `VIOLATED`;
+- proof: `NONE`, `INCONCLUSIVE_BOUND`, `PROVEN_INFEASIBLE`;
+- relation: `UNCOMPARED`, `DOMINATED`, `NON_DOMINATED`, `POLICY_WINNER`, `BEST_EVALUATED_UNDER_POLICY`, `PROVEN_OPTIMAL`.
+
+The existing `feasibilityStatus` may remain as a compatibility projection, but it is derived from the independent facts. A proof cannot hide invalid execution. `PROVEN_OPTIMAL` requires complete search or a named optimality proof.
+
+No model-authored interpretation belongs inside the receipt.
+
+## Evidence graph and trust partition
+
+The application preserves:
+
+- baseline receipt;
+- immutable scenario versions;
+- receipt-to-scenario/source relationships;
+- authority invalidation relationships;
+- comparisons and dominance edges;
+- selection policy and justified claim level;
+- current and historical evidence.
+
+The bounded `evidence_index` lets a context-free agent recover existing work without re-simulation.
+
+Each entry structurally separates:
+
+- authoritative deterministic facts;
+- untrusted display labels.
+
+A label that resembles a tool instruction, revision, metric, or proof remains inert text.
+
+## Comparison contract
+
+The current grammar makes the first `run_id` the anchor. That ordering must be explicit in schema copy and result:
 
 ```json
 {
   "anchor_run_id": "factory-run-baseline",
-  "feasible_run_ids": ["factory-run-b"],
+  "candidate_run_ids": ["factory-run-a", "factory-run-b"],
+  "eligible_current_run_ids": ["factory-run-a", "factory-run-b"],
+  "historical_run_ids": [],
+  "invalid_run_ids": [],
   "pareto_frontier_run_ids": ["factory-run-b"],
   "dominated": [
     {
@@ -384,147 +556,157 @@ The first `run_id` is the anchor and order is meaningful. The result should add 
       "reasons": ["same_good_output", "higher_total_cost"]
     }
   ],
-  "lowest_cost_feasible_run_id": "factory-run-b"
+  "selected_run_id": "factory-run-b",
+  "claim_level": "BEST_EVALUATED_UNDER_POLICY"
 }
 ```
 
-The selection rule must be declared, stable, and tested. It is not permission for the engine to invent business preferences that were not in the mission contract.
+Current selection rules:
+
+1. source is current and execution is valid;
+2. all hard constraints pass;
+3. maximize good output;
+4. minimize total cost;
+5. minimize defect rate;
+6. minimize changed controls;
+7. stable canonical identifier as final tie-break.
+
+Historical receipts may be compared for audit only and cannot produce an unlabeled current winner. Invalid receipts are diagnostic and cannot win.
 
 ## Tool ergonomics while retaining exactly six tools
 
-| Tool | Agent question it answers | Required ergonomic behavior |
+| Tool | Agent question | Minimum sufficient behavior |
 | --- | --- | --- |
-| `get_factory_snapshot` | “What world, objective, authority, action space, and evidence do I have?” | Call first and after human intervention; return derived targets, capability map, state token, evidence index, and copy-ready continuation. |
-| `get_scenario_snapshot` | “What exactly is this hypothesis head, and is it still usable?” | Use for resume or recovery; distinguish declared, effective, and suppressed overrides; return lineage, currentness, receipt summary, and continuation. |
-| `create_scenario` | “Create a clean hypothesis under the authority I currently hold.” | Bind the scenario to the supplied factory and lock revision; return a copy-ready continuation; expose any archived display slot without deleting evidence. |
-| `apply_scenario_changes` | “Commit these bounded absolute controls to this current hypothesis.” | Include only intended fields; reject the entire batch on any stale or locked condition; return committed fields, cleared receipt state, and next continuation. |
-| `run_factory_simulation` | “What deterministically happens if this exact hypothesis runs?” | Return a compact content-addressed receipt, exact slack, remaining bottlenecks, audit status, proof, and currentness. |
-| `compare_simulation_runs` | “Which evidence is feasible, dominated, or preferred under the declared rule?” | State that the first run is the anchor; return exact deltas, feasibility, dominance, Pareto frontier, and deterministic selection. |
+| `get_factory_snapshot` | What decision world, authority, time, capability, and evidence exist now? | Return mission, derived targets, epoch, capability map, locks/time, baseline, evidence index, and continuation. |
+| `get_scenario_snapshot` | What exactly is this hypothesis head, where did it come from, and is it usable now? | Return lineage, requested/normalized/effective controls, source binding, currentness reason, receipt summary, and continuation. |
+| `create_scenario` | Create a clean hypothesis under the authority I currently hold. | Bind to supplied epoch, use deterministic UI pin/allocation semantics, preserve old evidence, and return continuation. |
+| `apply_scenario_changes` | Commit these available absolute controls to this current head. | Normalize no-ops, reject unavailable changes before evaluation, commit atomically, and report requested/changed/no-op/blocked fields. |
+| `run_factory_simulation` | What deterministically happens for this exact hypothesis? | Return compact source-bound receipt, exact slack, bottlenecks, operation/invariant audit, proof, truth axes, and continuation. |
+| `compare_simulation_runs` | Which eligible evidence is feasible, dominated, or preferred under the declared policy? | Make anchor explicit; validate currentness/validity; return deltas, dominance, frontier, selection, and claim level. |
 
-Tool descriptions should include **when to call**, **what side effect occurs**, **what can make the call fail**, and **what the result enables next**. Descriptions should not contain instructions unrelated to the application or claims that the browser should trust merely because the website says so.
+Tool descriptions state when to call, side effects, preconditions, normal failures, and the result-enabled next step. They never instruct the browser to trust arbitrary page text.
 
 ## Accretion model
 
-A useful agent system should become easier to operate as evidence accumulates.
+Every useful interaction leaves one durable artifact:
 
-Every call must produce at least one durable artifact:
-
-- a fresher decision context;
-- a new immutable scenario head;
-- a committed state transition;
-- a content-addressed simulation receipt;
-- a deterministic comparison;
-- or a structured recovery state.
+- fresher decision context;
+- immutable scenario head;
+- committed state transition;
+- content-addressed receipt;
+- deterministic comparison;
+- or structured recovery state.
 
 Nothing important is silently overwritten:
 
-- stale receipts become historical rather than disappearing;
-- scenario replacement affects a display slot, not the evidence graph;
-- currentness is computed, not inferred from recency;
-- comparisons reference receipt IDs, not mutable scenario labels;
-- the revision ledger is a human projection of the same event history used by the agent.
+- stale receipts become historical;
+- A/B re-pinning does not delete scenario or evidence identity;
+- currentness is computed from source binding;
+- comparisons reference run IDs, not mutable labels;
+- the human ledger and agent evidence index project the same typed events;
+- conversation memory is optional because application evidence is recoverable.
 
-The factory snapshot should expose a bounded `evidence_index` containing enough metadata to recover from context loss without re-running simulations. Full receipt detail remains on demand.
+## Resource-efficiency contract
 
-## Resource-efficiency principles
+Optimize in this order:
 
-1. **One complete orientation read.** The first snapshot contains the mission, action space, authority, baseline, and existing evidence.
-2. **Copy, do not translate.** Continuation field names match the next tool input.
-3. **Progressive disclosure.** Default responses contain decision-complete summaries; deep tick evidence is requested only when needed.
-4. **Delta recovery.** A known state token allows compact re-reads after a human change.
-5. **No duplicate arithmetic.** Derived thresholds, slack, dominance, and exact comparisons are computed by deterministic software.
-6. **No speculative retries.** Errors say whether anything committed and what read restores authority.
-7. **No mega-tool.** Planning, mutation, simulation, and comparison remain separate because those boundaries are visible evidence in the challenge.
-8. **No agent-only shadow state.** Important state lives in the application and is visible to the human, not only in the model’s conversation memory.
+1. semantic correctness;
+2. human-authority preservation;
+3. evidence validity and currentness;
+4. recovery correctness;
+5. avoidable calls;
+6. evaluator executions;
+7. repeated bytes and model tokens.
 
-## Weaknesses and required responses
+Principles:
 
-| Current weakness | Why it matters to an agent | Target response | Priority |
-| --- | --- | --- | --- |
-| Read outputs and write preconditions use different field names | Increases transcription and stale-call errors | Add copy-ready `continuation` objects to every result | P0 |
-| Legal controls are distributed across schemas and engine code | Agent must infer ownership, timing, and lockability | Generate schema, validation, lock enforcement, and `control_catalog` from one canonical definition | P0 |
-| Lock output omits effective tick and blocked fields | The agent cannot model the actual simulated authority boundary | Introduce one typed lock contract rendered identically in tools, UI, proof, and docs | P0 |
-| Calibration ownership differs between public field naming and engine resource mapping | Tool and simulator can disagree about which human lock governs a control | Choose one owner and derive every layer from it | P0 |
-| A post-lock replan can retain old Packaging overrides in a merged patch | “Use only unlocked controls” can be false at the scenario-input level | Freeze old scenario on authority change and require a clean scenario branch | P0 |
-| Stale errors report only the first failed precondition | Recovery requires another read and inference | Return complete `precondition_diff`, `committed: false`, and a recovery directive | P0 |
-| Compare output lists deltas but leaves dominance arithmetic to the model | Wastes tokens and risks incorrect recommendation logic | Add deterministic feasibility, dominance, Pareto, and tie-break summary | P1 |
-| Re-reading returns the full baseline even when only the lock changed | Repeats stable context | Add optional `known_state_token` and full/delta/not-modified modes | P1 |
-| Historical runs are stored but not exposed as a recoverable index | Evidence does not fully compound across context loss | Add bounded `evidence_index` with stable receipt metadata | P1 |
-| Tool descriptions explain purpose but not the expected control loop | Tool selection depends more on model improvisation | Rewrite descriptions around when/side effect/failure/next | P1 |
-| The visual lock affordance is small relative to its narrative importance | Human intervention can be missed by judges and agents inspecting the page | Increase visual salience and state the effective time and blocked controls | P1 |
+- one complete orientation read;
+- copy continuations instead of translating revisions;
+- compact decision-complete receipts;
+- detailed ticks only on demand;
+- normalize no-ops before commit;
+- do not repeat deterministic arithmetic in model prose;
+- do not re-run an identical canonical input;
+- optional delta/not-modified reads only after correctness;
+- no agent-only shadow state;
+- no mega-tool that hides challenge boundaries.
 
-## Challenge-safe implementation sequence
+### Minimal current traces
 
-The submitted build already proves the safety spine. Changes to the live challenge entry must be additive, backwards compatible with the recorded evaluator prompts, and followed by a complete live replay.
+Initial two-scenario decision: exactly eight Site Tool calls—orient, create/apply/run twice, compare.
 
-### Phase 0 — freeze the signature interaction
+After the one intentional stale response: exactly four calls—refresh, create, apply, simulate.
 
-Do not change:
+A three-call recovery target conflicts with the public create/apply/run grammar and is not an optimization unless the product deliberately changes that grammar after the challenge.
+
+## Shared human projection
+
+The visible interface should expose the same consequential facts the agent receives:
+
+- mission and exact thresholds;
+- model and authority revisions;
+- control availability and reason;
+- human lock owner, blocked fields, and tick-16 / 240-minute effect;
+- durable scenario identity and A/B display pin;
+- requested versus effective overrides;
+- current, historical, and invalid evidence with reason;
+- independent validity, feasibility, proof, and decision-relation states;
+- receipt and evaluator identity;
+- declared comparison policy and justified claim level.
+
+The human lock affordance must remain obvious at compressed demo scale. Status cannot rely on color alone.
+
+## Challenge-safe evolution
+
+Do not change in the submitted profile without a complete replay:
 
 - exactly six top-level imperative tools;
-- human-only lock/unlock controls;
-- stale-write rejection before recovery;
+- human-only lock/unlock;
+- explicit create/apply/run boundaries;
+- one visible stale rejection before recovery;
 - deterministic receipts and `9252 < 10937` proof;
-- the lack of external side effects;
-- the visible revision ledger and scenario evidence.
+- no external side effects;
+- visible revision and evidence trail.
 
-### Phase 1 — coherence fixes
+Implementation order and current defects live in `docs/AGENT_SYSTEM_HARDENING_PLAN.md`.
 
-1. Define a canonical control catalog and lock contract.
-2. Unify calibration ownership.
-3. Define one lock-effective-tick constant and expose it everywhere.
-4. Make authority changes freeze old scenario heads and require a clean branch.
-5. Add regression tests before changing submission copy.
+Every code change requires:
 
-### Phase 2 — copy-ready protocol
-
-1. Add state tokens and continuation objects to all successful results.
-2. Add complete precondition diffs and explicit commit status to expected errors.
-3. Rewrite tool descriptions around the operating loop.
-4. Keep all existing fields for recorded-demo compatibility.
-
-### Phase 3 — accretive evidence
-
-1. Add a bounded evidence index.
-2. Add exact constraint slack and remaining bottlenecks to compact receipt projections.
-3. Add deterministic dominance and Pareto summaries to comparison.
-4. Add lineage metadata for fresh post-lock branches.
-
-### Phase 4 — resource optimization
-
-1. Add optional known-state delta reads.
-2. Measure response bytes and tool-call count in live traces.
-3. Tune default detail only after accuracy and recovery evals stay green.
-
-### Required release gate after any code change
-
-- `npm run verify` passes from a clean checkout.
-- The deployed page still registers exactly six top-level tools.
-- The existing reset → two scenarios → compare flow still works.
-- The intentional stale write still fails once and mutates nothing.
-- Recovery requires a fresh read and respects the human lock.
-- The locked replan still exposes a current, deterministic proof.
-- Submission copy, demo prompt, tool metadata, UI labels, and actual payloads agree.
+- `npm run verify` from a clean checkout;
+- generated control parity tests;
+- applicable golden traces in `docs/AGENT_EVAL_PLAN.md`;
+- exactly six discovered top-level tools;
+- complete reset → two scenarios → compare replay;
+- intentional stale rejection with no operational/scenario mutation;
+- fresh authority read and clean post-lock branch;
+- current proof and exact engine identity;
+- visual inspection at recorded and compressed demo sizes;
+- documentation/payload/UI agreement;
+- recording compatibility decision.
 
 ## Non-goals for the challenge build
 
-- an embedded chatbot;
-- a model-driven optimizer that hides scenario formation;
-- agent-accessible lock, unlock, force, approve, or machine-control capabilities;
-- a broad catalogue of low-value tools;
-- authentication or external plant integration;
-- multi-factory administration;
-- replacing exact receipts with generated explanations;
-- automatic stale-command replay that bypasses the visible human-agent disagreement.
+- embedded chatbot;
+- public frontier-search, batch-evaluation, or optimizer mega-tool;
+- agent-accessible lock, unlock, force, approve, or machine-control capability;
+- external telemetry or plant integration;
+- authentication or multi-factory administration;
+- broad catalogues of weak tools;
+- automatic stale-command replay;
+- model-authored operational metrics or proofs;
+- global-optimality claims from a bounded comparison;
+- simultaneous v1 and experimental v2 tool profiles on one page.
 
 ## Product thesis
 
-The deepest product idea is not factory simulation. It is **shared epistemic and operational control**:
+The deepest product idea is not factory simulation. It is **shared epistemic and operational control inside a visible decision system**:
 
-- the human owns intent and may narrow authority at any moment;
-- the agent owns search, hypothesis formation, and evidence assembly inside that authority;
-- deterministic software owns operational facts;
-- immutable artifacts preserve what was known, attempted, rejected, and proven;
-- WebMCP is the protocol that lets all four occupy the same live interface.
+- the human owns intent and authority;
+- the semantic kernel owns what actions mean;
+- the agent owns hypothesis formation and evidence navigation within current capability;
+- deterministic software owns operational facts and proofs;
+- immutable artifacts preserve what was known, attempted, rejected, compared, and proven;
+- WebMCP makes the same system directly operable by the browser agent;
+- the human interface makes every consequential transition inspectable and interruptible.
 
-That is the system the challenge entry should make legible in under three minutes.
+The system is maximally agent-friendly not when it removes every step, but when every necessary step is obvious, every accidental step disappears, and every claim has an inspectable source.

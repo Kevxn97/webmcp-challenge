@@ -2,13 +2,13 @@
 
 **A human changes one rule. The agent's previous plan immediately loses authority.**
 
-Agentic Sandbox is a deterministic factory decision lab where a person and a browser agent plan against the same live, versioned system. The agent can inspect the line, create alternatives, apply bounded settings, run a deterministic simulation, and compare immutable receipts. The human can intervene through the visible interface by locking Packaging. Stale agent work then fails closed, the earlier evidence remains inspectable, and the agent must re-read and replan under the new authority boundary.
+Agentic Sandbox is a deterministic factory decision lab where a person and a browser agent plan against the same live, versioned **decision state**. The agent can inspect the line model, create alternatives, apply bounded settings, run a deterministic simulation, and compare immutable receipts. The human can intervene through the visible interface by locking Packaging. Stale agent work then fails closed, the earlier evidence remains inspectable, and the agent must re-read and replan under the new authority boundary.
 
 [Open the live application →](https://webmcp-challenge-seven.vercel.app)
 
 ![Agentic Sandbox precision-blueprint interface](docs/agentic-sandbox-desktop.png)
 
-Built for the [OpenAI WebMCP Challenge](https://openai.com/webmcp-challenge/), this is not a chatbot pasted onto a dashboard and it is not an AI control surface for real equipment. It is a shared decision protocol whose human UI and six WebMCP Site Tools use the same application-owned command path.
+Built for the [OpenAI WebMCP Challenge](https://openai.com/webmcp-challenge/), this is not a chatbot pasted onto a dashboard and it is not an AI control surface for real equipment. It is a shared decision protocol whose human UI and six WebMCP Site Tools use the same application-owned command path. “Live” refers to the planning state on the page; the challenge build has no live plant telemetry or machine-control path.
 
 ## The signature interaction
 
@@ -22,35 +22,54 @@ Then click **Lock resource** on Packaging and add:
 
 > Retry the last Scenario B write once with a fresh request ID but the exact revisions you held before my click. Do not re-read first. Report the structured error. Then re-read the factory, keep Packaging unchanged, replan using only unlocked controls, simulate one shift, and explain the deterministic evidence.
 
-The deliberate stale call is rejected atomically. Nothing is applied. After a fresh read, the agent can act only inside the new human-defined boundary. The simulator can then issue a conservative lock-bound proof rather than an unsupported explanation.
+The deliberate stale call is rejected atomically. Nothing is applied to the scenario. After a fresh read, the agent can act only inside the new human-defined boundary. The simulator can then issue a conservative lock-bound proof rather than an unsupported explanation.
 
 That disagreement is the product: the human is not approving opaque agent prose, and the agent is not scraping pixels or silently overriding a changed rule.
 
 ## Why WebMCP is essential
 
-Without WebMCP, the agent would have to infer operational state from pixels and manipulate controls by coordinates, or the product would need a separate chatbot and backend with its own state. Here, the page exposes narrow typed capabilities over the same live state, permissions, revisions, and evidence the human sees.
+Without WebMCP, the agent would have to infer state from pixels and manipulate controls by coordinates, or the product would need a separate chatbot and backend with its own state. Here, the page exposes narrow typed capabilities over the same consequential state, permissions, revisions, and evidence the human sees.
 
 WebMCP provides the missing shared control plane:
 
 - the human sets intent and can change authority in the visible product;
 - the agent forms and tests explicit hypotheses through Site Tools;
+- a canonical semantic layer defines what controls mean and when they are available;
 - the deterministic engine owns every operational number;
-- immutable receipts preserve what was attempted, rejected, feasible, stale, and proven;
-- the interface renders the same state transitions to both participants.
+- immutable receipts preserve what was attempted, rejected, feasible, historical, and proven;
+- the interface renders the same consequential transitions to both participants.
 
 ## Agent operating contract
 
 Before each write, an agent should be able to answer:
 
 1. What exact outcome counts as success?
-2. Which factory and lock revisions am I acting on?
-3. Which controls exist and which are currently writable?
-4. Which evidence is current and which is historical?
+2. Which model, mission, authority, and effective time am I acting on?
+3. Which controls exist, what do their values mean, and which are available now?
+4. Which evidence is current, historical, or invalid?
 5. Which exact identifiers and revisions does the next call require?
-6. Did the previous operation commit?
-7. What is the least expensive safe next action?
+6. Is the requested action a legal change, a no-op, or unavailable?
+7. Did the previous operation commit?
+8. What recovery action is correct after an expected failure?
+9. What is the least expensive safe next action?
+10. What claim level does the evidence actually justify?
 
-The current challenge build already implements the safety spine: narrow tools, closed schemas, independent validation, optimistic concurrency, idempotency, human-only locks, immutable receipts, currentness checks, and fail-closed errors. The additive design for making the interface more copyable, incremental, and evidence-accretive is specified in [Agent-system design](docs/AGENT_SYSTEM_DESIGN.md) and measured by [Agent evaluation plan](docs/AGENT_EVAL_PLAN.md). Those target additions are not claimed as implemented until their code and live replay pass.
+The current challenge build already implements the safety spine: narrow tools, closed schemas, independent input validation, optimistic concurrency, idempotency, human-only locks, immutable receipts, currentness indicators, and fail-closed errors.
+
+The target architecture makes the interface fully coherent and agent-ergonomic through:
+
+- one canonical control definition across schema, validation, unit, range, ownership, phase, evaluator mapping, lock scope, UI, and docs;
+- zero hidden dependency on selected UI state;
+- explicit planning versus simulation time;
+- phase-aware capability metadata;
+- semantic no-op normalization;
+- copy-ready continuations and complete recovery errors;
+- clean post-lock scenario lineage;
+- source-bound evidence and comparison eligibility;
+- separate execution-validity, currentness, constraint, proof, and decision-relation states;
+- evidence reuse and incremental reads.
+
+See [Agent-system design](docs/AGENT_SYSTEM_DESIGN.md), [Agent-system hardening plan](docs/AGENT_SYSTEM_HARDENING_PLAN.md), and [Agent evaluation plan](docs/AGENT_EVAL_PLAN.md). Target additions are not claimed as implemented until code and live replay pass.
 
 ## Audience and potential impact
 
@@ -66,14 +85,14 @@ The top-level page registers exactly six imperative tools through `document.mode
 
 | Tool | Kind | Agent question |
 | --- | --- | --- |
-| `get_factory_snapshot` | Read | What factory, mission, locks, baseline, bottlenecks, and scenario heads exist now? |
+| `get_factory_snapshot` | Read | What decision context, mission, locks, baseline, bottlenecks, and scenario heads exist now? |
 | `get_scenario_snapshot` | Read | What exact scenario head and receipt exist, and is the source still current? |
 | `create_scenario` | Write | Create a named planning branch from the expected factory and lock revisions. |
 | `apply_scenario_changes` | Write | Atomically commit bounded absolute settings to the expected scenario head. |
 | `run_factory_simulation` | Write | Run and store one deterministic 16-hour, 64-tick shift receipt. |
 | `compare_simulation_runs` | Read | Compare two to four immutable receipts using exact deltas and constraints. |
 
-There is deliberately no `lock`, `unlock`, `force`, `approve`, arbitrary patch, or machine-control tool. Human locks exist only in the visible interface.
+There is deliberately no `lock`, `unlock`, `force`, `approve`, arbitrary patch, optimizer, or machine-control tool. Human locks exist only in the visible interface.
 
 The registration layer feature-detects WebMCP, remains stable across React Strict Mode and HMR, validates arguments independently of JSON Schema, propagates cancellation, sanitizes unexpected errors, and returns a closed `factory-tools/v1` JSON envelope.
 
@@ -90,12 +109,16 @@ get_factory_snapshot
 
 human locks Packaging
         │
-        ├─> stale write rejected; nothing mutates
+        ├─> stale write rejected; no scenario state mutates
         ├─> get_factory_snapshot
         └─> replan under the new lock ─> run_factory_simulation ─> exact proof
 ```
 
-The workflow intentionally keeps orientation, hypothesis, mutation, evaluation, comparison, conflict, recovery, and proof as separate inspectable boundaries. Resource efficiency should come from copy-ready continuations, compact receipts, evidence reuse, and incremental reads—not from hiding the workflow inside one optimizer call.
+The verified workflow keeps orientation, hypothesis, mutation, evaluation, comparison, conflict, recovery, and proof as separate inspectable boundaries. The initial two-scenario decision takes eight Site Tool calls: one orientation, create/apply/run twice, then compare.
+
+The hardened target adds a **clean post-lock scenario head** rather than merging unlocked changes into the pre-lock head. While retaining the current public grammar, that clean recovery is four calls after the intentional stale response: refresh, create, apply, simulate.
+
+Resource efficiency should come from copy-ready continuations, no-op normalization, compact receipts, evidence reuse, and incremental reads—not from hiding the workflow inside one mega-tool.
 
 ## Why the evidence is trustworthy
 
@@ -120,7 +143,9 @@ The seeded acceptance cases are intentionally easy to audit:
 | Expedite plan | 11,114 | Fails the 8% cost cap and is output-equivalent but more expensive |
 | Packaging locked at tick 16 | ≤9,252 upper bound | Target 10,937 is proven unreachable under the modeled lock |
 
-The lock-bound simulation models the Packaging lock as effective at tick 16, four hours into the 16-hour shift. The system design requires that this timing and the blocked control set be derived from one canonical lock contract and made equally visible in tool output, UI, proof, and documentation.
+The lock click is a planning-time event. The deterministic counterfactual models its effect at tick 16, four hours into the 16-hour shift. The target system derives this timing and the blocked control set from one canonical lock contract and renders them consistently in tool output, UI, proof, tests, and documentation.
+
+Scenario B is better among the two demonstrated current alternatives. The comparison does not establish global optimality.
 
 ## State, idempotency, and recovery
 
@@ -133,28 +158,30 @@ Every mutation carries a request ID plus expected factory, scenario, and human-l
 - Replaying a successful simulation preserves the original receipt while recalculating whether its source is still current.
 - A committed domain outcome remains authoritative even if a later presentation-layer visibility wait is throttled or fails.
 
-Historical receipts remain auditable. Currentness is explicit; recency alone never makes a receipt authoritative.
+The hardened target additionally makes semantic no-ops non-mutating, source currentness reasoned rather than merely boolean, and historical/invalid evidence ineligible for an unlabeled current winner.
 
 ## Architecture
 
 ```text
 Human controls ─┐
-                ├─> versioned SandboxStore / command bus ─> deterministic engine
-WebMCP tools ───┘                    │                            │
-                                    ├─> scenario heads            │
-                                    ├─> human lock ledger         │
-                                    ├─> immutable run store        │
-                                    └─> visible revision ledger <─┘
+                ├─> shared command protocol ─> deterministic engine
+WebMCP tools ───┘             │                         │
+                              ├─> authority epoch       │
+                              ├─> scenario lineage      │
+                              ├─> immutable run store   │
+                              ├─> evidence graph        │
+                              └─> shared UI projection <┘
 ```
 
-- `src/domain/` contains the pure simulator, fixtures, hashes, constraints, invariants, and receipts.
-- `src/app/` owns versioned scenario state, idempotency, optimistic concurrency, human locks, and the shared command bus.
+- `src/domain/` contains the simulator, fixtures, hashes, constraints, invariants, and receipts.
+- `src/app/` owns scenario state, idempotency, optimistic concurrency, human locks, and the shared command bus.
 - `src/webmcp/` owns registration, schemas, runtime validation, tool envelopes, and browser lifecycle handling.
-- `src/ui/` renders the precision-blueprint factory, comparison evidence, lock state, and append-only revision ledger.
-- `docs/AGENT_SYSTEM_DESIGN.md` defines the target agent-facing abstraction tower and challenge-safe evolution path.
-- `docs/AGENT_EVAL_PLAN.md` defines trace-level correctness, recovery, evidence, and resource-efficiency gates.
+- `src/ui/` renders the precision-blueprint factory, comparison evidence, lock state, and revision ledger.
+- `docs/AGENT_SYSTEM_DESIGN.md` defines the normative linked abstraction tower.
+- `docs/AGENT_SYSTEM_HARDENING_PLAN.md` records the code-audited seams and implementation sequence.
+- `docs/AGENT_EVAL_PLAN.md` defines trace-level semantic, correctness, recovery, evidence, and resource gates.
 
-Everything runs locally in the page. There is no model API key, backend, account, purchase, PLC, SCADA, or physical-machine integration.
+Everything runs locally in the page. There is no model API key, backend, account, purchase, telemetry, PLC, SCADA, or physical-machine integration.
 
 ## Safety boundaries
 
@@ -164,9 +191,10 @@ Everything runs locally in the page. There is no model API key, backend, account
 - Mutations fail closed on stale factory, scenario, or lock revisions.
 - Human locks win and have no agent-accessible override.
 - The baseline and stored receipts are immutable.
-- A rejected call mutates nothing.
+- A rejected call changes no scenario state.
 - Normal human controls remain available when WebMCP is absent.
 - The agent may explain evidence but cannot author operational facts.
+- User/agent labels are display text and cannot affect routing, evaluation, currentness, or selection.
 
 ## Local development
 
@@ -201,6 +229,7 @@ The repository is self-contained and needs no environment variables or backend. 
 
 - [Product brief](docs/PRODUCT_BRIEF.md)
 - [Agent-system design](docs/AGENT_SYSTEM_DESIGN.md)
+- [Agent-system hardening plan](docs/AGENT_SYSTEM_HARDENING_PLAN.md)
 - [Agent evaluation plan](docs/AGENT_EVAL_PLAN.md)
 - [Three-minute demo script](docs/DEMO_SCRIPT.md)
 - [Submission copy](docs/SUBMISSION.md)

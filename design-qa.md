@@ -22,7 +22,7 @@ Intentional product-truth differences from the concept image:
 - Scenario B is shown as stale after the human lock because its receipt was produced under the prior lock revision; the reference communicates the same revision-mismatch idea while still labeling B feasible.
 - Constraint feasibility is summarized in the selected-scenario bar and per-row status/evidence cells rather than repeated as a decorative table row.
 
-No visible P0, P1, or P2 mismatch remains after the final comparison.
+No visible P0, P1, or P2 mismatch remains against the selected visual target in the verified challenge state.
 
 ## Iteration record
 
@@ -50,4 +50,18 @@ No visible P0, P1, or P2 mismatch remains after the final comparison.
 - 768 × 900: document width remains 768 px; wide factory and evidence canvases use contained horizontal scrolling.
 - 390 × 844: document width remains 390 px; mission, state, tools, controls, and evidence remain usable while the industrial blueprint can be deliberately panned horizontally.
 
-final result: passed
+## Agent-system visual follow-up
+
+The current design passes against its selected visual target and recorded challenge flow. The subsequent agent-system review adds a separate product requirement: the human authority change must remain unmistakable when the app is compressed beside ChatGPT's Site Tools panel or shown in a short judge video.
+
+Before claiming the target agent-system contract, evaluate an additive lock-state treatment that:
+
+- keeps the Packaging control visible in both unlocked and locked states;
+- makes **Human control** and the resulting authority revision legible without relying on color;
+- exposes the blocked control set and the modeled effective time used by the proof;
+- visually distinguishes current evidence from historical evidence after the lock;
+- does not turn the page into a tutorial or add a second interaction surface.
+
+This is a future agent-ergonomics criterion, not a claim that the verified screenshot is broken. Any implementation change requires a new side-by-side capture, responsive QA, accessibility check, and full live WebMCP replay before this report can be marked passed again.
+
+final result: passed for the submitted baseline; target-contract visual follow-up specified

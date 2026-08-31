@@ -111,15 +111,12 @@ human locks Packaging
         │
         ├─> stale write rejected; no scenario state mutates
         ├─> get_factory_snapshot
-        └─> clean scenario ─> available controls ─> simulation ─> exact proof
+        └─> replan under the new lock ─> run_factory_simulation ─> exact proof
 ```
 
-The workflow intentionally keeps orientation, hypothesis, mutation, evaluation, comparison, conflict, recovery, and proof as separate inspectable boundaries.
+The verified workflow keeps orientation, hypothesis, mutation, evaluation, comparison, conflict, recovery, and proof as separate inspectable boundaries. The initial two-scenario decision takes eight Site Tool calls: one orientation, create/apply/run twice, then compare.
 
-Under this grammar:
-
-- the minimal two-scenario decision takes exactly eight Site Tool calls;
-- after the one intentional stale response, a clean current locked receipt takes four calls: refresh, create, apply, simulate.
+The hardened target adds a **clean post-lock scenario head** rather than merging unlocked changes into the pre-lock head. While retaining the current public grammar, that clean recovery is four calls after the intentional stale response: refresh, create, apply, simulate.
 
 Resource efficiency should come from copy-ready continuations, no-op normalization, compact receipts, evidence reuse, and incremental reads—not from hiding the workflow inside one mega-tool.
 

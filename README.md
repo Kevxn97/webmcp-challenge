@@ -20,7 +20,7 @@ Give the browser agent this mission:
 
 Then click **Lock resource** on Packaging and add:
 
-> Retry the last Scenario B write once with a fresh request ID but the exact revisions you held before my click. Do not re-read first. Report the structured error. Then re-read the factory, keep Packaging unchanged, replan using only unlocked controls, simulate one shift, and explain the deterministic evidence.
+> Retry the last Scenario B write once with a fresh request ID but the exact revisions you held before my click. Do not re-read first. Report the structured error. Then re-read the factory, create a fresh scenario under the new human authority, keep Packaging unchanged, apply only controls reported as available, simulate one shift, and explain the deterministic evidence.
 
 The deliberate stale call is rejected atomically. Nothing is applied to the scenario. After a fresh read, the agent can act only inside the new human-defined boundary. The simulator can then issue a conservative lock-bound proof rather than an unsupported explanation.
 

@@ -48,7 +48,7 @@ const VALID_APPLY_INPUT = {
   expected_scenario_revision: 2,
   expected_lock_revision: 3,
   changes: {
-    mixer_speed_bps: 10_200,
+    mixer_speed_bps: 10_000,
     packaging_changeover_minutes: 15,
     packaging_calibration: "enhanced",
     supplier_mode: "standard",

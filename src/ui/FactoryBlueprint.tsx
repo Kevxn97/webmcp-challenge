@@ -48,7 +48,7 @@ function traceState(scenario: ScenarioView | undefined): string {
   switch (scenario?.status) {
     case "FEASIBLE": return "Feasible";
     case "FAILED": return "Violates";
-    case "STALE": return "Stale receipt";
+    case "STALE": return "Historical receipt";
     case "PROVEN INFEASIBLE": return "Locked infeasible";
     case "NOT RUN": return "Not run";
     default: return "Not run";
@@ -101,11 +101,14 @@ export function FactoryBlueprint({
                 title={station.locked ? "Unlock Packaging as the human operator" : "Lock Packaging as the human operator"}
               >
                 {station.locked ? (
-                  <LockSimple aria-hidden="true" size={16} weight="bold" />
+                  <LockSimple aria-hidden="true" size={18} weight="bold" />
                 ) : (
-                  <LockSimpleOpen aria-hidden="true" size={16} weight="bold" />
+                  <LockSimpleOpen aria-hidden="true" size={18} weight="bold" />
                 )}
-                {station.locked ? "Locked by human" : "Lock resource"}
+                <span className="station-lock-copy">
+                  <small>Human control</small>
+                  <strong>{station.locked ? "Override active" : "Lock Packaging"}</strong>
+                </span>
               </button>
             )}
             {station.bottleneck && <span className="bottleneck-label">Capacity bottleneck</span>}

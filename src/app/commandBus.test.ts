@@ -122,7 +122,7 @@ describe("real store + WebMCP command bus", () => {
     expect(store.getSnapshot().ledger[0]?.label).toContain("feasible");
   });
 
-  it("returns HUMAN_LOCKED with no partial change after the human interrupts", async () => {
+  it("rejects the historical scenario head and requires a fresh branch after human authority changes", async () => {
     const store = new SandboxStore();
     await store.hydrateShowcase();
     store.reset();
@@ -150,9 +150,17 @@ describe("real store + WebMCP command bus", () => {
 
     expect(result).toMatchObject({
       status: "error",
-      code: "HUMAN_LOCKED",
+      code: "STALE_SCENARIO",
       request_id: "lock-e2e-apply",
-      data: expect.objectContaining({ locked_resource: "Packaging" }),
+      data: expect.objectContaining({
+        committed: false,
+        source_lock_revision: beforeCreate.lockRevision,
+        current_lock_revision: locked.lockRevision,
+        recovery: expect.objectContaining({
+          tool: "get_factory_snapshot",
+          fresh_scenario_required: true,
+        }),
+      }),
     });
     expect(store.getSnapshot().scenarios.find((scenario) => scenario.id === created.scenario_id)?.revision).toBe(revisionBefore);
   });

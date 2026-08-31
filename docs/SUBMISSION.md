@@ -104,7 +104,7 @@ The Packaging click occurs in the shared planning workflow. The proof models its
 - The system distinguishes feasible, failed, stale, and mathematically proven-infeasible outcomes.
 - Both participants end on the same receipt, not competing narratives.
 
-The target architecture strengthens this further by making control units, legal domains, resource ownership, phase availability, source-bound currentness, semantic no-ops, and comparison claim levels explicit before the agent depends on them.
+The live challenge build makes control units, legal domains, resource ownership, phase availability, source-bound currentness, semantic no-ops, and comparison claim levels explicit before the agent depends on them.
 
 ## Audience and potential impact
 

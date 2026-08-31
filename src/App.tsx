@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 
 import { SandboxFactoryCommandBus } from "./app/commandBus";
+import { buildDecisionPacket } from "./app/decisionPacket";
 import { sandboxStore } from "./app/store";
 import { createBlueprintViewModel } from "./app/viewModel";
 import { BlueprintShell } from "./ui/BlueprintShell";
@@ -15,6 +16,7 @@ export function App() {
     sandboxStore.getSnapshot,
   );
   const model = useMemo(() => createBlueprintViewModel(state), [state]);
+  const decisionPacket = useMemo(() => buildDecisionPacket(state), [state]);
 
   useEffect(() => {
     let active = true;
@@ -39,6 +41,7 @@ export function App() {
   return (
     <BlueprintShell
       model={model}
+      decisionPacket={decisionPacket}
       onReset={() => sandboxStore.reset()}
       onTogglePackagingLock={() => void sandboxStore.togglePackagingLock()}
       onSelectScenario={(scenarioId) => sandboxStore.selectScenario(scenarioId)}

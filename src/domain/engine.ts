@@ -1,4 +1,5 @@
 import { canonicalStableStringify, sha256Hex } from "./canonical";
+import { SPEED_BPS_MAX, SPEED_BPS_MIN } from "../shared/controlDefinitions";
 import {
   ASSET_INVENTORY,
   BASELINE_BAD_UNITS,
@@ -373,8 +374,10 @@ function assertInteger(value: unknown, label: string): asserts value is number {
 
 function assertInitialSpeed(value: unknown, label: string): asserts value is number {
   assertInteger(value, label);
-  if (value < 5_000 || value > 10_000) {
-    throw new FactoryValidationError(`${label} must be between 5000 and 10000 bps`);
+  if (value < SPEED_BPS_MIN || value > SPEED_BPS_MAX) {
+    throw new FactoryValidationError(
+      `${label} must be between ${SPEED_BPS_MIN} and ${SPEED_BPS_MAX} bps`,
+    );
   }
 }
 
@@ -643,8 +646,8 @@ function resourceForKind(kind: string): FactoryResource | null {
       return "Mixer";
     case "SET_PACKAGING_SPEED":
     case "SET_CHANGEOVER_MINUTES":
-      return "Packaging";
     case "SET_CALIBRATION":
+      return "Packaging";
     case "SET_QUALITY_RATE":
       return "Quality Gate";
     case "SET_WAREHOUSE_RATE":
@@ -663,9 +666,9 @@ function lockedControlPaths(resource: FactoryResource): string[] {
     case "Mixer":
       return ["mixerSpeedBps"];
     case "Packaging":
-      return ["packagingSpeedBps", "changeoverMinutes"];
+      return ["packagingSpeedBps", "changeoverMinutes", "calibration"];
     case "Quality Gate":
-      return ["calibration", "qualityRateUnitsPerHour"];
+      return ["qualityRateUnitsPerHour"];
     case "Warehouse":
       return ["warehouseRateUnitsPerHour"];
   }
@@ -675,8 +678,8 @@ function isSpeedBps(value: unknown): value is number {
   return (
     typeof value === "number" &&
     Number.isSafeInteger(value) &&
-    value >= 5_000 &&
-    value <= 10_000
+    value >= SPEED_BPS_MIN &&
+    value <= SPEED_BPS_MAX
   );
 }
 

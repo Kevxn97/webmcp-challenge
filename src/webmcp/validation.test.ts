@@ -119,6 +119,24 @@ describe("WebMCP schema and validator parity", () => {
       COMPARE_RUN_IDS_CONSTRAINTS,
     );
   });
+
+  it("accepts nameplate speed at 10000 bps and rejects 10001 before the command bus", () => {
+    const base = {
+      request_id: "req.speed.boundary",
+      scenario_id: "scenario-a",
+      expected_factory_revision: 1,
+      expected_scenario_revision: 1,
+      expected_lock_revision: 0,
+    };
+    expect(validateApplyScenarioChangesInput({
+      ...base,
+      changes: { mixer_speed_bps: 10_000, packaging_speed_bps: 10_000 },
+    }).ok).toBe(true);
+    expect(validateApplyScenarioChangesInput({
+      ...base,
+      changes: { mixer_speed_bps: 10_001 },
+    }).ok).toBe(false);
+  });
 });
 
 describe("WebMCP validator reconstruction", () => {
@@ -133,7 +151,7 @@ describe("WebMCP validator reconstruction", () => {
       expected_lock_revision: 3,
     };
     const changesSource = {
-      mixer_speed_bps: 10_200,
+      mixer_speed_bps: 10_000,
       packaging_changeover_minutes: 15,
       packaging_calibration: "enhanced",
       supplier_mode: "standard",
@@ -192,7 +210,7 @@ describe("WebMCP validator reconstruction", () => {
 
     expect(scenario.scenario_id).toBe("scenario-b");
     expect(create.name).toBe("Scenario Clean");
-    expect(apply.changes.mixer_speed_bps).toBe(10_200);
+    expect(apply.changes.mixer_speed_bps).toBe(10_000);
     expect(run.expected_factory_revision).toBe(7);
     expect(compare.run_ids).toEqual(["run-a", "run-b"]);
     expect(Object.values(apply.changes).every((value) =>

@@ -47,12 +47,12 @@ const REVISION_PROPERTY = (description: string) => ({
 const SCENARIO_CHANGE_PROPERTIES = {
   mixer_speed_bps: {
     type: "integer",
-    description: "Mixer speed as basis points of baseline (10000 = 100%).",
+    description: "Mixer speed as basis points of equipment nameplate (10000 = 100%).",
     ...SPEED_BPS_CONSTRAINTS,
   },
   packaging_speed_bps: {
     type: "integer",
-    description: "Packaging speed as basis points of baseline (10000 = 100%).",
+    description: "Packaging speed as basis points of equipment nameplate (10000 = 100%).",
     ...SPEED_BPS_CONSTRAINTS,
   },
   packaging_changeover_minutes: {

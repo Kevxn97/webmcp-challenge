@@ -1,5 +1,9 @@
+import { useState } from "react";
 import {
+  Check,
   CheckCircle,
+  Copy,
+  DownloadSimple,
   GitBranch,
   Info,
   Play,
@@ -7,7 +11,7 @@ import {
   XCircle,
 } from "@phosphor-icons/react";
 
-import type { ConstraintCheckView, ScenarioView } from "./types";
+import type { ConstraintCheckView, DecisionPacketExport, ScenarioView } from "./types";
 
 interface ScenarioTableProps {
   scenarios: ScenarioView[];
@@ -20,6 +24,7 @@ interface ScenarioTableProps {
   onRunSelected: () => void;
   onBranch: () => void;
   onExplain: () => void;
+  decisionPacket: DecisionPacketExport | null;
 }
 
 function PassState({ pass }: { pass: boolean | null }) {
@@ -46,13 +51,32 @@ export function ScenarioTable({
   onRunSelected,
   onBranch,
   onExplain,
+  decisionPacket,
 }: ScenarioTableProps) {
+  const [packetCopied, setPacketCopied] = useState(false);
   const baseline = scenarioForMarker(scenarios, "BL");
   const scenarioA = scenarioForMarker(scenarios, "A");
   const scenarioB = scenarioForMarker(scenarios, "B");
   const selected = scenarios.find((scenario) => scenario.id === selectedScenarioId) ?? scenarioB ?? baseline;
   const hasReceipt = Boolean(selected?.receiptId);
   const stale = hasReceipt && (latestRevision > currentRevision || selected?.status === "STALE");
+
+  const copyDecisionPacket = async () => {
+    if (!decisionPacket) return;
+    await navigator.clipboard.writeText(decisionPacket.markdown);
+    setPacketCopied(true);
+    globalThis.setTimeout(() => setPacketCopied(false), 1_600);
+  };
+
+  const downloadDecisionPacket = () => {
+    if (!decisionPacket) return;
+    const url = URL.createObjectURL(new Blob([decisionPacket.json], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = decisionPacket.fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <section className="scenario-comparison" aria-labelledby="scenario-comparison-title">
@@ -61,10 +85,20 @@ export function ScenarioTable({
           <span className="section-eyebrow">Decision evidence</span>
           <h2 id="scenario-comparison-title">Scenario comparison</h2>
         </div>
-        <button className="quiet-button" type="button" onClick={onExplain} disabled={!hasReceipt}>
-          <Info aria-hidden="true" size={16} weight="bold" />
-          Why this result?
-        </button>
+        <div className="comparison-actions">
+          <button className="quiet-button" type="button" onClick={onExplain} disabled={!hasReceipt}>
+            <Info aria-hidden="true" size={16} weight="bold" />
+            Why this result?
+          </button>
+          <button className="packet-action" type="button" onClick={() => void copyDecisionPacket()} disabled={!decisionPacket}>
+            {packetCopied ? <Check aria-hidden="true" size={15} weight="bold" /> : <Copy aria-hidden="true" size={15} weight="bold" />}
+            {packetCopied ? "Packet copied" : "Copy decision packet"}
+          </button>
+          <button className="packet-action packet-action--download" type="button" onClick={downloadDecisionPacket} disabled={!decisionPacket}>
+            <DownloadSimple aria-hidden="true" size={15} weight="bold" />
+            JSON
+          </button>
+        </div>
       </div>
 
       <div className="comparison-scroll">
@@ -127,7 +161,9 @@ export function ScenarioTable({
             <small>Selected scenario</small>
             <strong>{selected?.name ?? "Baseline"}</strong>
           </span>
-          <b className={`scenario-status scenario-status--${selected?.tone ?? "baseline"}`}>{selected?.status ?? "BASELINE"}</b>
+          <b className={`scenario-status scenario-status--${selected?.tone ?? "baseline"}`}>
+            {selected?.status === "STALE" ? "HISTORICAL" : selected?.status ?? "BASELINE"}
+          </b>
         </div>
         <button className="primary-action" type="button" onClick={onRunSelected} disabled={busy || !selected?.runnable}>
           <Play aria-hidden="true" size={20} weight="fill" />
@@ -140,8 +176,8 @@ export function ScenarioTable({
         <div className={`revision-warning${stale ? " revision-warning--visible" : ""}`} role="status">
           {hasReceipt ? <Warning aria-hidden="true" size={24} weight="fill" /> : <Info aria-hidden="true" size={24} weight="fill" />}
           <span>
-            <strong>{!hasReceipt ? "No receipt yet" : stale ? "Revision mismatch" : "Revision current"}</strong>
-            <small>{!hasReceipt ? `Ready at lock revision v${latestRevision}` : stale ? `Viewing v${currentRevision}; latest is v${latestRevision}` : `Receipt verified at v${currentRevision}`}</small>
+            <strong>{!hasReceipt ? "No receipt yet" : stale ? "Historical evidence" : "Revision current"}</strong>
+            <small>{!hasReceipt ? `Ready at lock revision v${latestRevision}` : stale ? `Authority changed after v${currentRevision}; current lock is v${latestRevision}` : `Receipt verified at v${currentRevision}`}</small>
           </span>
         </div>
       </footer>

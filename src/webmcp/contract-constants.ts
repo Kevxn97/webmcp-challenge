@@ -1,3 +1,5 @@
+import { SPEED_BPS_MAX, SPEED_BPS_MIN } from "../shared/controlDefinitions";
+
 export const REQUEST_ID_CONSTRAINTS = {
   minLength: 1,
   maxLength: 64,
@@ -22,8 +24,8 @@ export const REVISION_CONSTRAINTS = {
 } as const;
 
 export const SPEED_BPS_CONSTRAINTS = {
-  minimum: 5_000,
-  maximum: 15_000,
+  minimum: SPEED_BPS_MIN,
+  maximum: SPEED_BPS_MAX,
 } as const;
 
 export const PACKAGING_CHANGEOVER_MINUTES = [15, 30, 45] as const;

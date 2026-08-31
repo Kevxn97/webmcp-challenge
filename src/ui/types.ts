@@ -53,6 +53,8 @@ export interface ScenarioView {
   receiptId: string | null;
   engineVersion: string | null;
   infeasibilityProof: InfeasibilityProofView | null;
+  sourceCurrent: boolean;
+  historicalReason: string | null;
   runnable: boolean;
   branchable: boolean;
   metrics: ScenarioMetricView;
@@ -82,6 +84,20 @@ export interface ConstraintCheckView {
   scenarioBEvidence: string;
 }
 
+export interface AuthorityView {
+  packagingLocked: boolean;
+  lockRevision: number;
+  blockedControls: string[];
+  effectiveTick: number | null;
+  effectiveElapsedMinutes: number | null;
+}
+
+export interface DecisionPacketExport {
+  markdown: string;
+  json: string;
+  fileName: string;
+}
+
 export interface BlueprintViewModel {
   revision: number;
   latestRevision: number;
@@ -89,6 +105,7 @@ export interface BlueprintViewModel {
   webMcpStatus: "ready" | "unavailable";
   busy: boolean;
   selectedScenarioId: string;
+  authority: AuthorityView;
   constraints: MissionConstraintView[];
   stations: StationView[];
   scenarios: ScenarioView[];

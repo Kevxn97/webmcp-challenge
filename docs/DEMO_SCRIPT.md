@@ -99,7 +99,7 @@ This failure must occur once. Do not auto-refresh and silently replay the write;
 
 **Prompt:**
 
-> Now re-read the factory. Packaging may not be changed. Replan using only unlocked controls, simulate one shift, and explain the result from the deterministic evidence.
+> Now re-read the factory. Create a fresh scenario under the new human authority. Packaging may not be changed. Apply only controls reported as AVAILABLE, simulate one shift, and explain the result from the deterministic evidence.
 
 **Visual:** Show the fresh factory snapshot, the new/current plan under the lock, and the stored simulation result.
 
@@ -109,7 +109,7 @@ This failure must occur once. Do not auto-refresh and silently replay the write;
 
 **Capability semantics:** In the hardened target, the fresh snapshot marks every control as `AVAILABLE`, `HUMAN_LOCKED`, `PHASE_CLOSED`, or `UNSUPPORTED`. At tick 16, Packaging controls are human-locked and pre-shift controls such as supplier mode are phase-closed. The meaningful runtime replan uses only available controls such as Mixer, Quality Gate, or Warehouse capacity.
 
-**Target evolution:** The current submitted prompt remains supported. The normative target creates a clean scenario head bound to the post-lock authority epoch, so no pre-lock Packaging override can leak into the new hypothesis. Do not claim clean branching or capability-status metadata is implemented until code, UI, tests, and live replay prove it.
+**Implemented recovery:** The fresh snapshot exposes `AVAILABLE`, `HUMAN_LOCKED`, and `PHASE_CLOSED` capability states. The agent creates a clean scenario head bound to the post-lock authority epoch, so no pre-lock Packaging override can leak into the new hypothesis.
 
 **Operational call contract:** After the intentional stale response, the explicit current grammar requires four calls: refresh, create, apply, simulate. Do not force a three-call target unless the public grammar is deliberately changed after the challenge.
 
@@ -132,7 +132,7 @@ This failure must occur once. Do not auto-refresh and silently replay the write;
 
 ## 2:36–2:50 — Close on the system
 
-**Visual:** Receipt hash, exact constraints, revision ledger, then the complete blueprint.
+**Visual:** Copy or download the deterministic decision packet, then show its receipt hashes, human authority, exact constraints, proof, revision ledger, and the complete blueprint.
 
 **Narration:**
 

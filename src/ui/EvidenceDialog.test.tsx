@@ -10,6 +10,8 @@ function proofScenario(overrides: Partial<ScenarioView["infeasibilityProof"]> = 
     name: "Proof scenario",
     status,
     tone: status === "STALE" ? "stale" : "danger",
+    sourceCurrent: status !== "STALE",
+    historicalReason: status === "STALE" ? "AUTHORITY_EPOCH_CHANGED" : null,
     revision: 1,
     receiptId: "factory-run-proof",
     engineVersion: "factory-engine/1.0.0",

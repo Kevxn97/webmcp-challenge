@@ -6,6 +6,7 @@ import {
   TOTAL_TICKS,
 } from "./constants";
 import type { FactoryControls, FactorySimulationInput } from "./types";
+import { PACKAGING_LOCK_EFFECTIVE_TICK } from "../shared/controlDefinitions";
 
 function controlsFixture(): FactoryControls {
   return { ...BASELINE_CONTROLS };
@@ -85,35 +86,35 @@ export function createLockedScenarioInput(): FactorySimulationInput {
     operations: [
       {
         operationId: "lock-packaging-t16",
-        tick: 16,
+        tick: PACKAGING_LOCK_EFFECTIVE_TICK,
         actor: "human",
         kind: "LOCK_RESOURCE",
         resource: "Packaging",
       },
       {
         operationId: "locked-same-tick-packaging-9000",
-        tick: 16,
+        tick: PACKAGING_LOCK_EFFECTIVE_TICK,
         actor: "model",
         kind: "SET_PACKAGING_SPEED",
         valueBps: 9_000,
       },
       {
         operationId: "locked-mixer-9500",
-        tick: 16,
+        tick: PACKAGING_LOCK_EFFECTIVE_TICK,
         actor: "model",
         kind: "SET_MIXER_SPEED",
         valueBps: 9_500,
       },
       {
         operationId: "locked-changeover-15",
-        tick: 16,
+        tick: PACKAGING_LOCK_EFFECTIVE_TICK,
         actor: "model",
         kind: "SET_CHANGEOVER_MINUTES",
         valueMinutes: 15,
       },
       {
-        operationId: "locked-late-calibration",
-        tick: 16,
+        operationId: "locked-calibration",
+        tick: PACKAGING_LOCK_EFFECTIVE_TICK,
         actor: "model",
         kind: "SET_CALIBRATION",
         value: "enhanced",

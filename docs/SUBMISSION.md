@@ -10,28 +10,30 @@ A human changes one rule. The agent's previous plan immediately loses authority.
 
 ## What it does
 
-Agentic Sandbox is a deterministic factory decision lab where a human and a browser agent plan against the same live, versioned system.
+Agentic Sandbox is a deterministic factory decision lab where a human and a browser agent plan against the same live, versioned **decision state**.
 
-The agent can inspect the production line, create explicit planning hypotheses, apply bounded operating settings, run a deterministic 16-hour shift simulation, and compare immutable receipts. The human sees the same revisions and evidence in a precision-blueprint interface and can intervene at any time by locking Packaging.
+The agent can inspect the production-line model, create explicit planning hypotheses, apply bounded operating settings, run a deterministic 16-hour shift simulation, and compare immutable receipts. The human sees the same consequential revisions and evidence in a precision-blueprint interface and can intervene at any time by locking Packaging.
 
-That intervention is the signature interaction. Earlier evidence remains visible but becomes historical. An agent write carrying pre-lock revisions is rejected atomically and mutates nothing. The agent must re-read the new authority state and replan around the human constraint. When the target is no longer achievable, deterministic software returns a conservative upper-bound proof instead of letting the model improvise an explanation.
+That intervention is the signature interaction. Earlier evidence remains visible but becomes historical. An agent write carrying pre-lock revisions is rejected atomically and mutates no scenario state. The agent must re-read the new authority state and replan around the human constraint. When the target is no longer achievable under the modeled lock, deterministic software returns a conservative upper-bound proof instead of letting the model improvise an explanation.
+
+“Live” refers to the shared planning state on the page. The challenge build has no live plant telemetry and no machine-control path.
 
 ## Why WebMCP is essential
 
-Without WebMCP, the browser agent would have to infer operational state from pixels and manipulate controls through DOM or coordinate automation, or the product would need a separate chatbot and backend with its own shadow state.
+Without WebMCP, the browser agent would have to infer state from pixels and manipulate controls through DOM or coordinate automation, or the product would need a separate chatbot and backend with its own shadow state.
 
-Here, the website itself exposes exactly six narrow top-level Site Tools over the same application-owned command bus used by the visible interface. The agent operates on typed capabilities; the human operates on visible controls; both observe the same revisions, locks, scenario heads, receipts, and outcomes.
+Here, the website itself exposes exactly six narrow top-level Site Tools over the same application-owned command bus used by the visible interface. The agent operates on typed capabilities; the human operates on visible controls; both observe the same consequential revisions, locks, scenario heads, receipts, and outcomes.
 
 The best moment is not a successful tool call. It is a safe disagreement:
 
 1. the human changes the admissible action space;
 2. the agent's previous authority becomes stale;
 3. the page refuses the stale write;
-4. no state is silently mutated or rebased;
+4. no scenario state is silently mutated or rebased;
 5. the agent re-reads and adapts;
 6. both participants inspect deterministic evidence for the new conclusion.
 
-That shared authority-and-evidence loop is difficult to make coherent without browser-native tools attached to the live page.
+That shared authority-and-evidence loop is difficult to make coherent without browser-native tools attached to the live decision page.
 
 ## Agent experience
 
@@ -44,14 +46,14 @@ orient → branch a hypothesis → apply bounded controls → simulate → compa
                          human changes authority
                                       │
                                       ▼
-                 stale write rejected → re-read → replan → prove
+                 stale write rejected → re-read → clean replan → prove
 ```
 
 The six tools answer six concrete agent questions:
 
 | Site Tool | Agent question |
 | --- | --- |
-| `get_factory_snapshot` | What factory, mission, locks, baseline, bottlenecks, and scenario heads exist now? |
+| `get_factory_snapshot` | What decision context, mission, locks, baseline, bottlenecks, and scenario heads exist now? |
 | `get_scenario_snapshot` | What exact hypothesis head and receipt exist, and is the source still current? |
 | `create_scenario` | Create a named planning branch from the authority state I observed. |
 | `apply_scenario_changes` | Atomically commit these bounded absolute settings to the expected scenario head. |
@@ -59,6 +61,8 @@ The six tools answer six concrete agent questions:
 | `compare_simulation_runs` | How do two to four stored receipts differ against exact constraints? |
 
 There is deliberately no agent-accessible lock, unlock, force, approve, arbitrary patch, optimizer, or machine-control tool. Human authority stays human.
+
+The explicit create/apply/run boundaries are intentional. The minimal two-scenario decision takes eight Site Tool calls; after the one intentional stale response, a clean post-lock result takes refresh/create/apply/simulate. Resource efficiency should remove reconstructive reads, duplicate arithmetic, same-value writes, and repeated simulations—not hide meaningful evidence steps.
 
 ## Why the evidence is trustworthy
 
@@ -84,19 +88,23 @@ The seeded decision is intentionally easy to audit:
 | Scenario B · standard supplier | 11,114 | All four constraints pass |
 | Packaging locked at tick 16 | at most 9,252 | Target 10,937 is proven unreachable under the modeled lock |
 
-Scenario A and Scenario B produce the same output. The expedite premium therefore adds cost without adding output. After the human lock, the engine exposes the exact current proof `9252 < 10937` using `factory-engine/1.0.0`.
+Scenario A and Scenario B produce the same output. The expedite premium therefore adds cost without adding output. Scenario B is better among those evaluated alternatives; the demo does not claim a globally optimal factory plan.
+
+The Packaging click occurs in the shared planning workflow. The proof models its simulation effect at tick 16, 240 minutes into the counterfactual shift. After the lock, the engine exposes the exact current proof `9252 < 10937` using `factory-engine/1.0.0`.
 
 ## Human-agent experience
 
 - The person states a high-level mission in natural language.
 - The agent translates the mission into explicit, inspectable hypotheses.
-- The interface changes live as Site Tool calls commit.
-- Every consequential action is tied to expected revisions and a request ID.
+- The interface changes as Site Tool calls commit.
+- Every consequential mutation is tied to expected revisions and a request ID.
 - The person can narrow the agent's authority directly in the product without restarting the conversation.
 - The agent receives a structured stale-state error rather than silent recovery.
 - Historical evidence remains available, but currentness is explicit.
 - The system distinguishes feasible, failed, stale, and mathematically proven-infeasible outcomes.
 - Both participants end on the same receipt, not competing narratives.
+
+The target architecture strengthens this further by making control units, legal domains, resource ownership, phase availability, source-bound currentness, semantic no-ops, and comparison claim levels explicit before the agent depends on them.
 
 ## Audience and potential impact
 
@@ -104,7 +112,7 @@ The primary users are plant planners, industrial engineers, and continuous-impro
 
 Agentic Sandbox turns the existing decision interface into the collaboration surface. A browser agent can test alternatives quickly, while deterministic software owns the operational consequences and the human can change the admissible search space at any time.
 
-The first adoption wedge is bounded what-if analysis for line balancing, shift planning, and supplier decisions. A production implementation could connect the same version, capability, lock, and receipt pattern to a validated digital twin. ERP, PLC, SCADA, purchase, and physical-machine changes would remain behind their existing approval paths.
+The first adoption wedge is bounded what-if analysis for line balancing, shift planning, and supplier decisions. A production implementation could connect the same version, capability, lock, and receipt pattern to a validated digital twin. ERP, PLC, SCADA, purchase, and physical-machine changes would remain behind existing approval paths.
 
 The pattern generalizes beyond factories: any high-consequence planning interface can expose narrow capabilities, bind work to an authority epoch, preserve human vetoes, retain immutable evidence, and return machine-checkable decisions.
 
@@ -114,7 +122,7 @@ The React/Vite page registers six top-level imperative WebMCP tools through `doc
 
 The visible UI and WebMCP handlers share one application-owned command bus. Mutations use request IDs plus expected factory, scenario, and human-lock revisions. A stale or locked batch applies nothing. Successful simulation inputs are immutable, use real SHA-256 content hashes, and produce stored receipts with exact constraints, operation audits, invariants, and optional proofs.
 
-The submitted build is intentionally self-contained. It has no model API key, backend, account, purchase, production data, or machine integration.
+The submitted build is intentionally self-contained. It has no model API key, backend, account, purchase, production data, telemetry, or machine integration.
 
 ## Built with
 
@@ -138,4 +146,6 @@ Then click **Lock resource** on Packaging and tell the agent:
 
 ## Challenge-safe evolution
 
-The submitted and recorded interaction remains the release contract. The repository also documents an additive agent-system design for copy-ready continuations, canonical capability metadata, evidence indexing, complete recovery errors, clean post-lock branches, and deterministic dominance. These are target improvements, not claims about the current deployment, until implementation, tests, UI evidence, and a fresh live WebMCP replay all agree.
+The submitted and recorded interaction remains the release contract. The repository documents an additive agent-system architecture and a code-audited hardening plan for canonical control semantics, temporal capability, zero-hidden-state behavior, copy-ready continuations, source-bound evidence, complete recovery errors, clean post-lock branches, orthogonal receipt truth, and deterministic comparison claims.
+
+These are target improvements, not claims about the current deployment, until implementation, tests, visible UI evidence, and a fresh live WebMCP replay all agree.

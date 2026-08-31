@@ -104,12 +104,14 @@ The full evidence and implementation response is in `docs/AGENT_SYSTEM_HARDENING
 
 ## Minimal challenge traces
 
-Under the existing public grammar:
+Under the existing public tool grammar:
 
-- the initial two-scenario decision requires exactly **8 Site Tool calls**: orient, create/apply/run twice, compare;
-- after the one intentional stale response, a clean current locked receipt requires exactly **4 calls**: refresh, create, apply, simulate.
+- the verified initial two-scenario decision requires exactly **8 Site Tool calls**: orient, create/apply/run twice, compare;
+- the current deployed replay then re-reads and replans through the existing scenario surface.
 
-A three-call recovery target would contradict the explicit create/apply/run boundaries unless the public grammar changed. The challenge plan does not hide one of those steps merely to improve a call-count metric.
+The hardened clean-branch target deliberately adds a fresh `create_scenario` after the authority change. That target requires exactly **4 calls after the intentional stale response**: refresh, create, apply, simulate.
+
+A three-call target would contradict clean create/apply/run boundaries. The design does not hide one of those steps merely to improve a call-count metric, and it does not claim the deployed baseline already implements the clean branch.
 
 ## Release acceptance criteria
 

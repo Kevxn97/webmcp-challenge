@@ -24,7 +24,9 @@ Do not start the replay from the seeded completed-showcase state.
 
 **Narration:**
 
-“Factory planning usually separates the person who changes the rules from the assistant proposing the plan. Agentic Sandbox gives both one live, versioned decision space. The mission is twenty percent more good output, no more than eight percent extra cost, no new machine, and no quality regression.”
+“Factory planning usually separates the person who changes the rules from the assistant proposing the plan. Agentic Sandbox gives both one live, versioned decision state. The mission is twenty percent more good output, no more than eight percent extra cost, no new machine, and no quality regression.”
+
+**Truth note:** “Live” means the shared planning state on this page, not live plant telemetry or machine control.
 
 ## 0:10–0:22 — Why WebMCP
 
@@ -32,7 +34,7 @@ Do not start the replay from the seeded completed-showcase state.
 
 **Narration:**
 
-“The page exposes six narrow WebMCP tools over the exact same state as the visible interface. There is no DOM guessing, no separate chatbot, and no agent-only shadow state.”
+“The page exposes six narrow WebMCP tools over the exact same decision state as the visible interface. There is no DOM guessing, no separate chatbot, and no agent-only shadow state.”
 
 **Judge-visible proof:** The Site Tools list contains exactly:
 
@@ -53,7 +55,9 @@ Do not start the replay from the seeded completed-showcase state.
 
 **Narration:**
 
-“The agent reads the current factory, branches two hypotheses, applies bounded absolute settings, and invokes the local simulator. Both alternatives reach 11,114 good units. The expedited supplier adds no output, so Scenario A breaks the cost cap. Scenario B passes all four constraints. Every number comes from a stored simulator receipt, not from the language model.”
+“The agent reads the current decision context, branches two hypotheses, applies bounded absolute settings, and invokes the local simulator. Both alternatives reach 11,114 good units. The expedited supplier adds no output, so Scenario A breaks the cost cap. Scenario B passes all four constraints. Every number comes from a stored simulator receipt, not from the language model.”
+
+**Operational call contract:** The minimal six-tool trace is one orientation call, then create/apply/run for each scenario, then compare: eight Site Tool calls total. Do not insert reconstructive reads between successful writes.
 
 ## 1:10–1:23 — Compare exact outcomes
 
@@ -63,15 +67,17 @@ Do not start the replay from the seeded completed-showcase state.
 
 “This is a decision, not a list of options. The deterministic evidence shows that Scenario B produces the same output without the expedite premium.”
 
+**Claim discipline:** This makes Scenario B the better of the two evaluated current alternatives under the demonstrated policy. It does not prove global optimality.
+
 ## 1:23–1:36 — Human changes authority
 
-**Visual:** Click Packaging → **Lock resource**. Show the factory revision and lock state advance and the previous receipt become stale.
+**Visual:** Click Packaging → **Lock resource**. Show the factory and lock revisions advance and the previous receipt become stale.
 
 **Narration:**
 
-“Now the human changes the rules mid-workflow. I lock Packaging. The authority revision advances, the prior receipt remains as auditable history, and the old plan loses current authority.”
+“Now the human changes the rules in the shared planning state. I lock Packaging. The authority revision advances, the prior receipt remains as auditable history, and the old plan loses current authority.”
 
-**Semantics to preserve:** The simulation's lock-bound proof models this Packaging lock as effective at tick 16, four hours into the 16-hour shift. The UI, tool output, proof, and narration should use the same timing once that metadata is implemented visibly.
+**Time semantics:** The click is a planning-time event. The deterministic proof models its effect inside the counterfactual shift at tick 16—240 minutes into the 16-hour simulation. Once implemented, the lock card, Site Tool output, proof, and narration must expose that same assumption from one domain constant.
 
 ## 1:36–1:49 — Fail closed, visibly
 
@@ -87,6 +93,8 @@ Do not start the replay from the seeded completed-showcase state.
 
 This failure must occur once. Do not auto-refresh and silently replay the write; that would erase the challenge's human-agent disagreement.
 
+“Nothing mutated” refers to operational and scenario state. A future separate audit plane may record the rejected attempt only if it is explicitly labeled as audit evidence rather than a committed plan change.
+
 ## 1:49–2:17 — Re-read and replan
 
 **Prompt:**
@@ -97,9 +105,13 @@ This failure must occur once. Do not auto-refresh and silently replay the write;
 
 **Narration:**
 
-“The agent must reacquire the current state and replan around the human constraint. It can still change unlocked controls, but Packaging remains outside its authority.”
+“The agent must reacquire the current authority and replan around the human constraint. It may change only controls that are still available at the modeled time. Packaging remains outside its authority.”
 
-**Target evolution:** The current submitted prompt remains supported. The normative agent-system design upgrades this recovery to a clean scenario branch bound to the post-lock authority epoch, so no pre-lock Packaging override can leak into the new hypothesis. Do not claim that upgrade is implemented until the code, UI, tests, and live replay prove it.
+**Capability semantics:** In the hardened target, the fresh snapshot marks every control as `AVAILABLE`, `HUMAN_LOCKED`, `PHASE_CLOSED`, or `UNSUPPORTED`. At tick 16, Packaging controls are human-locked and pre-shift controls such as supplier mode are phase-closed. The meaningful runtime replan uses only available controls such as Mixer, Quality Gate, or Warehouse capacity.
+
+**Target evolution:** The current submitted prompt remains supported. The normative target creates a clean scenario head bound to the post-lock authority epoch, so no pre-lock Packaging override can leak into the new hypothesis. Do not claim clean branching or capability-status metadata is implemented until code, UI, tests, and live replay prove it.
+
+**Operational call contract:** After the intentional stale response, the explicit current grammar requires four calls: refresh, create, apply, simulate. Do not force a three-call target unless the public grammar is deliberately changed after the challenge.
 
 ## 2:17–2:36 — Prove infeasibility
 
@@ -114,7 +126,9 @@ This failure must occur once. Do not auto-refresh and silently replay the write;
 
 **Narration:**
 
-“The deterministic engine proves a conservative maximum of 9,252 good units while Packaging remains locked, below the 10,937-unit target. It can say ‘infeasible’ because it has a machine-checkable bound, not because the agent ran out of ideas.”
+“The deterministic engine proves a conservative maximum of 9,252 good units while Packaging remains locked under the modeled timing, below the 10,937-unit target. It can say ‘infeasible’ because it has a machine-checkable bound, not because the agent ran out of ideas.”
+
+**Truth-axis requirement:** A future hardened receipt must show execution validity, source currentness, hard-constraint feasibility, and proof state separately. A proof label must never hide invalid operations or stale assumptions.
 
 ## 2:36–2:50 — Close on the system
 
@@ -122,7 +136,7 @@ This failure must occur once. Do not auto-refresh and silently replay the write;
 
 **Narration:**
 
-“This is the agent-native web I want: the human sets intent and can change authority at any moment; the agent operates through explicit capabilities; deterministic software supplies the evidence; and the same page makes every consequential revision inspectable. Same state, clear authority, shared proof.”
+“This is the agent-native web I want: the human sets intent and can change authority at any moment; the agent operates through explicit capabilities; deterministic software supplies the evidence; and the same page makes every consequential revision inspectable. Same decision state, clear authority, shared proof.”
 
 ## Recording checklist
 
@@ -131,13 +145,15 @@ This failure must occur once. Do not auto-refresh and silently replay the write;
 - Use the deployed HTTPS URL in ChatGPT's built-in browser.
 - Show exactly six Site Tools once; keep Recently Used visible during calls.
 - Capture the two explicit hypotheses and exact comparison.
-- Capture the human Packaging lock and visible revision change.
-- Capture one intentional stale write, `STALE_FACTORY`, and unchanged state.
+- Capture the human Packaging lock and visible authority change.
+- Capture one intentional stale write, `STALE_FACTORY`, and unchanged operational/scenario state.
 - Capture the fresh read and locked replan.
+- Do not claim a post-lock supplier, changeover, or calibration change at tick 16.
 - Capture `9252 < 10937`, current source, proof version, receipt, and engine version.
+- Describe Scenario B as better among evaluated alternatives, not globally optimal.
 - Use fixed browser zoom; editorial crops are fine, but do not hide the Site Tool evidence.
 - End on the product, not a slide.
 
 ## Post-change replay rule
 
-Any code or visible-contract change before judging requires a full public replay of this script. A new recording is required if the previous video would materially misrepresent tool names, prompt compatibility, lock semantics, scenario lineage, response fields, outcomes, or UI evidence.
+Any code or visible-contract change before judging requires a full public replay of this script. A new recording is required if the previous video would materially misrepresent tool names, prompt compatibility, control domains, resource ownership, phase availability, lock timing, scenario lineage, response fields, currentness, truth axes, deterministic outcomes, or UI evidence.

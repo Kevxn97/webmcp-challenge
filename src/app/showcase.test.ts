@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import { buildDecisionPacket } from "./decisionPacket";
+import { PLANNING_MISSION_PROMPT } from "./demoPrompts";
 import { SandboxStore } from "./store";
 import { createBlueprintViewModel } from "./viewModel";
 
 describe("completed landing showcase", () => {
+  it("ships a mission-complete evaluator prompt", () => {
+    expect(PLANNING_MISSION_PROMPT).toContain("at least 20%");
+    expect(PLANNING_MISSION_PROMPT).toContain("at most 8%");
+    expect(PLANNING_MISSION_PROMPT).toContain("Do not add a machine");
+    expect(PLANNING_MISSION_PROMPT).toContain("do not increase the defect rate");
+    expect(PLANNING_MISSION_PROMPT).toContain("Compare the stored receipts");
+  });
+
   it("shows historical evidence plus a current clean recovery proof", async () => {
     const store = new SandboxStore();
     await store.hydrateShowcase();

@@ -46,7 +46,7 @@ orient → branch a hypothesis → apply bounded controls → simulate → compa
                          human changes authority
                                       │
                                       ▼
-                 stale write rejected → re-read → clean replan → prove
+                 stale write rejected → re-read → replan → prove
 ```
 
 The six tools answer six concrete agent questions:
@@ -62,7 +62,7 @@ The six tools answer six concrete agent questions:
 
 There is deliberately no agent-accessible lock, unlock, force, approve, arbitrary patch, optimizer, or machine-control tool. Human authority stays human.
 
-The explicit create/apply/run boundaries are intentional. The minimal two-scenario decision takes eight Site Tool calls; after the one intentional stale response, a clean post-lock result takes refresh/create/apply/simulate. Resource efficiency should remove reconstructive reads, duplicate arithmetic, same-value writes, and repeated simulations—not hide meaningful evidence steps.
+The initial two-scenario path takes eight Site Tool calls: orient, create/apply/run twice, and compare. The hardened target adds a clean post-lock scenario head; while retaining the public grammar, that target recovery is refresh/create/apply/simulate after the intentional stale response. Resource efficiency should remove reconstructive reads, duplicate arithmetic, same-value writes, and repeated simulations—not hide meaningful evidence steps.
 
 ## Why the evidence is trustworthy
 

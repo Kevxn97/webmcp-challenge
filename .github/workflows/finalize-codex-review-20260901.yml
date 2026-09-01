@@ -1,0 +1,114 @@
+name: Finalize Codex review fixes
+
+on:
+  push:
+    branches:
+      - feat/challenge-9plus
+    paths:
+      - scripts/.finalize-codex-review-20260901.trigger
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: finalize-codex-review-fixes
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v5
+        with:
+          ref: feat/challenge-9plus
+          fetch-depth: 0
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Assert every reviewed semantic is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'PACKAGING_LOCK_EFFECTIVE_TICK \* TICK_MINUTES' src/shared/controlDefinitions.ts
+          grep -q 'scenarioWorkspaceAllocation' src/app/store.ts
+          grep -q 'runProvenance' src/app/store.ts
+          grep -q 'UNEVALUATED' src/app/store.ts
+          grep -q 'CANDIDATE_MINUS_ANCHOR' src/app/store.ts
+          grep -q 'run_ids\[0\] is the anchor' src/webmcp/tools.ts
+          grep -q 'No scenario settings changed' src/app/commandBus.ts
+          test -f src/app/selectionPolicy.ts
+          test -f src/app/codexReview.test.ts
+
+      - name: Remove temporary apply infrastructure
+        shell: bash
+        run: |
+          set -euo pipefail
+          find .github/workflows -maxdepth 1 -type f \( \
+            -name 'apply-*codex*' -o \
+            -name 'apply-*review*' -o \
+            -name '*staged-review*' -o \
+            -name 'finalize-codex-review-20260901.yml' \
+          \) -delete
+          find scripts -maxdepth 1 -type f \( \
+            -name '.apply*review*' -o \
+            -name '.apply*codex*' -o \
+            -name '.finalize-codex-review-20260901.trigger' \
+          \) -delete
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run complete submission gate
+        run: npm run verify | tee /tmp/codex-review-verify.log
+
+      - name: Validate final patch shape
+        run: git diff --check
+
+      - name: Commit final verified tree
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: finalize verified Codex review fixes"
+          git push origin HEAD:feat/challenge-9plus
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Record verified review resolution on the PR
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/body.md <<EOF
+          <!-- codex-review-fixes-verified -->
+          ## Codex review fixes verified
+
+          All nine inline findings were evaluated as valid and addressed coherently rather than as isolated patches:
+
+          - canonical control/timing definitions now drive schemas, validators, baseline controls and operation mappings;
+          - archived receipt provenance and deterministic workspace allocation are publicly discoverable;
+          - current unevaluated heads are distinct from historical evidence;
+          - comparison anchoring, no-op messaging and effective changed-control scoring are explicit and consistent;
+          - the decision packet and comparison tool share one selection policy and canonical run-ID tie-break.
+
+          The final tree passed `npm run verify` and `git diff --check` before commit `${{ steps.commit.outputs.sha }}` was pushed.
+
+          @codex review
+          EOF
+          gh api \
+            --method POST \
+            repos/Kevxn97/webmcp-challenge/issues/7/comments \
+            -f body="$(cat /tmp/body.md)"

@@ -1,3 +1,4 @@
+import { CONTROL_DEFINITIONS, SCENARIO_CONTROL_FIELDS, type ScenarioControlField } from "../shared/controlDefinitions";
 import type { JsonSchema, JsonSchemaProperty } from "./contracts";
 import {
   APPLY_SCENARIO_CHANGES_FIELDS,
@@ -6,21 +7,14 @@ import {
   CREATE_SCENARIO_FIELDS,
   GET_FACTORY_SNAPSHOT_FIELDS,
   GET_SCENARIO_SNAPSHOT_FIELDS,
-  PACKAGING_CALIBRATIONS,
-  PACKAGING_CHANGEOVER_MINUTES,
-  QUALITY_RATES_UNITS_PER_HOUR,
   REQUEST_ID_CONSTRAINTS,
   RESOURCE_ID_CONSTRAINTS,
   REVISION_CONSTRAINTS,
   RUN_FACTORY_SIMULATION_FIELDS,
   SCENARIO_CHANGES_MIN_PROPERTIES,
-  SCENARIO_CHANGE_FIELDS,
   SCENARIO_CHANGE_REQUIRED_FIELDS,
   SCENARIO_NAME_CONSTRAINTS,
   SIMULATION_HORIZON_SHIFTS,
-  SPEED_BPS_CONSTRAINTS,
-  SUPPLIER_MODES,
-  WAREHOUSE_DOCK_RATES_UNITS_PER_HOUR,
 } from "./contract-constants";
 
 export const SCENARIO_NAME_PATTERN_SOURCE =
@@ -44,46 +38,30 @@ const REVISION_PROPERTY = (description: string) => ({
   ...REVISION_CONSTRAINTS,
 });
 
-const SCENARIO_CHANGE_PROPERTIES = {
-  mixer_speed_bps: {
-    type: "integer",
-    description: "Mixer speed as basis points of baseline (10000 = 100%).",
-    ...SPEED_BPS_CONSTRAINTS,
-  },
-  packaging_speed_bps: {
-    type: "integer",
-    description: "Packaging speed as basis points of baseline (10000 = 100%).",
-    ...SPEED_BPS_CONSTRAINTS,
-  },
-  packaging_changeover_minutes: {
-    type: "integer",
-    description: "Packaging changeover duration in minutes.",
-    enum: PACKAGING_CHANGEOVER_MINUTES,
-  },
-  packaging_calibration: {
-    type: "string",
-    description: "Packaging calibration mode.",
-    enum: PACKAGING_CALIBRATIONS,
-  },
-  supplier_mode: {
-    type: "string",
-    description: "Supplier service mode.",
-    enum: SUPPLIER_MODES,
-  },
-  quality_rate_units_per_hour: {
-    type: "integer",
-    description: "Quality-gate inspection capacity in units per hour.",
-    enum: QUALITY_RATES_UNITS_PER_HOUR,
-  },
-  warehouse_dock_units_per_hour: {
-    type: "integer",
-    description: "Warehouse dock capacity in units per hour.",
-    enum: WAREHOUSE_DOCK_RATES_UNITS_PER_HOUR,
-  },
-} as const satisfies Record<
-  (typeof SCENARIO_CHANGE_FIELDS)[number],
-  JsonSchemaProperty
->;
+const SCENARIO_CHANGE_PROPERTIES = Object.fromEntries(
+  SCENARIO_CONTROL_FIELDS.map((field) => {
+    const definition = CONTROL_DEFINITIONS[field];
+    const property: JsonSchemaProperty = definition.domain.type === "range"
+      ? {
+          type: "integer",
+          description: definition.description,
+          minimum: definition.domain.minimum,
+          maximum: definition.domain.maximum,
+        }
+      : typeof definition.domain.values[0] === "number"
+        ? {
+            type: "integer",
+            description: definition.description,
+            enum: definition.domain.values as readonly number[],
+          }
+        : {
+            type: "string",
+            description: definition.description,
+            enum: definition.domain.values as readonly string[],
+          };
+    return [field, property];
+  }),
+) as Record<ScenarioControlField, JsonSchemaProperty>;
 
 export const GET_FACTORY_SNAPSHOT_SCHEMA = {
   type: "object",
@@ -183,7 +161,7 @@ export const COMPARE_SIMULATION_RUNS_SCHEMA = {
   properties: {
     run_ids: {
       type: "array",
-      description: "Two to four simulation run identifiers to compare.",
+      description: "Two to four stored run identifiers. The first item is the anchor; every reported delta is candidate minus anchor.",
       items: RESOURCE_ID_PROPERTY("Simulation run identifier."),
       ...COMPARE_RUN_IDS_CONSTRAINTS,
     },

@@ -105,6 +105,7 @@ describe("real store + WebMCP command bus", () => {
     }, executionMetadata());
     expect(compared).toMatchObject({ status: "ok", code: "OK" });
     expect(compared?.data).toMatchObject({
+      delta_semantics: "CANDIDATE_MINUS_ANCHOR",
       anchor_constraints: expect.arrayContaining([
         expect.objectContaining({ code: "OUTPUT_20", lhs: expect.any(String), operator: ">=", rhs: expect.any(String) }),
       ]),
@@ -122,7 +123,7 @@ describe("real store + WebMCP command bus", () => {
     expect(store.getSnapshot().ledger[0]?.label).toContain("feasible");
   });
 
-  it("returns HUMAN_LOCKED with no partial change after the human interrupts", async () => {
+  it("rejects the historical scenario head and requires a fresh branch after human authority changes", async () => {
     const store = new SandboxStore();
     await store.hydrateShowcase();
     store.reset();
@@ -150,9 +151,17 @@ describe("real store + WebMCP command bus", () => {
 
     expect(result).toMatchObject({
       status: "error",
-      code: "HUMAN_LOCKED",
+      code: "STALE_SCENARIO",
       request_id: "lock-e2e-apply",
-      data: expect.objectContaining({ locked_resource: "Packaging" }),
+      data: expect.objectContaining({
+        committed: false,
+        source_lock_revision: beforeCreate.lockRevision,
+        current_lock_revision: locked.lockRevision,
+        recovery: expect.objectContaining({
+          tool: "get_factory_snapshot",
+          fresh_scenario_required: true,
+        }),
+      }),
     });
     expect(store.getSnapshot().scenarios.find((scenario) => scenario.id === created.scenario_id)?.revision).toBe(revisionBefore);
   });
@@ -244,5 +253,76 @@ describe("real store + WebMCP command bus", () => {
     expect(first).toMatchObject({ status: "ok", code: "OK", request_id: "concurrent-run" });
     expect(store.getSnapshot().ledger.filter((event) => event.kind === "simulation" && event.label.includes("Concurrent plan A"))).toHaveLength(1);
     expect(store.getSnapshot().scenarios.find((scenario) => scenario.id === scenarioB.scenario_id)?.receipt).toBeNull();
+  });
+
+  it("describes semantic no-ops truthfully without claiming a commit", async () => {
+    const store = new SandboxStore();
+    await store.hydrateShowcase();
+    store.reset();
+    const factory = store.getSnapshot();
+    const scenario = store.createScenario({
+      request_id: "noop-create",
+      name: "No-op plan",
+      factory_version_id: factory.factoryVersionId,
+      expected_factory_revision: factory.factoryRevision,
+      expected_lock_revision: factory.lockRevision,
+    });
+    const tool = descriptorMap(store).get("apply_scenario_changes");
+
+    const result = await tool?.execute({
+      request_id: "noop-apply",
+      scenario_id: scenario.scenario_id,
+      expected_factory_revision: factory.factoryRevision,
+      expected_scenario_revision: scenario.scenario_revision,
+      expected_lock_revision: factory.lockRevision,
+      changes: { supplier_mode: "standard" },
+    }, executionMetadata());
+
+    expect(result).toMatchObject({
+      status: "ok",
+      code: "OK",
+      message: "Scenario settings already matched the effective values; no state changed.",
+      data: {
+        committed: false,
+        outcome: "NO_OP",
+        scenario_revision: scenario.scenario_revision,
+      },
+    });
+  });
+
+  it("maps a full current workspace to the public WORKSPACE_FULL code", async () => {
+    const store = new SandboxStore();
+    await store.hydrateShowcase();
+    store.reset();
+    const factory = store.getSnapshot();
+    store.createScenario({
+      request_id: "full-create-a",
+      name: "Full A",
+      factory_version_id: factory.factoryVersionId,
+      expected_factory_revision: factory.factoryRevision,
+      expected_lock_revision: factory.lockRevision,
+    });
+    store.createScenario({
+      request_id: "full-create-b",
+      name: "Full B",
+      factory_version_id: factory.factoryVersionId,
+      expected_factory_revision: factory.factoryRevision,
+      expected_lock_revision: factory.lockRevision,
+    });
+    const tool = descriptorMap(store).get("create_scenario");
+
+    const result = await tool?.execute({
+      request_id: "full-create-c",
+      name: "Full C",
+      factory_version_id: factory.factoryVersionId,
+      expected_factory_revision: factory.factoryRevision,
+      expected_lock_revision: factory.lockRevision,
+    }, executionMetadata());
+
+    expect(result).toMatchObject({
+      status: "error",
+      code: "WORKSPACE_FULL",
+      data: expect.objectContaining({ committed: false }),
+    });
   });
 });

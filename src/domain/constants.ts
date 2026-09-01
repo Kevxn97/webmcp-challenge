@@ -1,25 +1,19 @@
+import { BASELINE_ENGINE_CONTROLS } from "../shared/controlDefinitions";
 import type { AssetRecord, FactoryControls, MaterialDelivery } from "./types";
+
+export { TICK_MINUTES, TOTAL_TICKS } from "../shared/simulationContract";
 
 export const INPUT_VERSION = "factory-input/v1" as const;
 export const RECEIPT_VERSION = "factory-receipt/v1" as const;
 export const ENGINE_VERSION = "factory-engine/1.0.0" as const;
 export const ENERGY_MODEL_VERSION = "factory-energy/v1" as const;
 
-export const TICK_MINUTES = 15 as const;
-export const TOTAL_TICKS = 64 as const;
 export const UNIT_MASS_GRAMS = 1_000;
 export const MIXER_NAMEPLATE_GRAMS_PER_HOUR = 800_000;
 export const PACKAGING_NAMEPLATE_UNITS_PER_HOUR = 800;
 
-export const BASELINE_CONTROLS: Readonly<FactoryControls> = Object.freeze({
-  mixerSpeedBps: 8_750,
-  packagingSpeedBps: 7_500,
-  changeoverMinutes: 30,
-  calibration: "standard",
-  qualityRateUnitsPerHour: 800,
-  warehouseRateUnitsPerHour: 900,
-  supplierMode: "standard",
-});
+export const BASELINE_CONTROLS: Readonly<FactoryControls> =
+  BASELINE_ENGINE_CONTROLS;
 
 export const BASELINE_DELIVERIES: readonly MaterialDelivery[] = Object.freeze(
   [0, 16, 32, 48].map((tick) =>

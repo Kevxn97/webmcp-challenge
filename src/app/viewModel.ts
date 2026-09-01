@@ -13,6 +13,11 @@ import type {
   SimulationReceipt,
   TickSnapshot,
 } from "../domain";
+import {
+  PACKAGING_CONTROL_FIELDS,
+  PACKAGING_LOCK_EFFECTIVE_MINUTES,
+  PACKAGING_LOCK_EFFECTIVE_TICK,
+} from "../shared/controlDefinitions";
 import type {
   BlueprintViewModel,
   ConstraintCheckView,
@@ -106,6 +111,9 @@ function toneForStatus(status: ScenarioView["status"]): ScenarioView["tone"] {
 
 function toScenarioView(scenario: ScenarioRecord, state: SandboxState): ScenarioView {
   const status = scenarioStatus(scenario, state.lockRevision);
+  const authorityCurrent = scenario.sourceFactoryRevision === state.factoryRevision
+    && scenario.baseFactoryVersionId === state.factoryVersionId
+    && scenario.sourceLockRevision === state.lockRevision;
   return {
     id: scenario.id,
     marker: scenario.marker,
@@ -125,7 +133,11 @@ function toScenarioView(scenario: ScenarioRecord, state: SandboxState): Scenario
       sourceCurrent: scenario.receiptScenarioRevision === scenario.revision
         && scenario.receiptLockRevision === state.lockRevision,
     } : null,
-    runnable: !scenario.placeholder,
+    sourceCurrent: authorityCurrent
+      && scenario.receiptScenarioRevision === scenario.revision
+      && scenario.receiptLockRevision === state.lockRevision,
+    historicalReason: authorityCurrent ? null : "Human authority changed after this scenario head was created",
+    runnable: !scenario.placeholder && authorityCurrent,
     branchable: !scenario.placeholder,
     metrics: scenarioMetrics(scenario.receipt, state.baselineReceipt),
     violations: scenario.receipt?.constraints.filter((constraint) => !constraint.pass).map((constraint) => constraint.code) ?? [],
@@ -209,7 +221,7 @@ function stationViews(state: SandboxState): StationView[] {
     },
     {
       id: "quality", ordinal: "04", name: "Quality Gate", subtitle: "Inline inspection", Icon: ShieldCheck,
-      queue: receipt ? receipt.rawCounters.endingGoodQueueUnits.toLocaleString("en-US") : "—",
+      queue: receipt ? receipt.rawCounters.endingPackagedQueueUnits.toLocaleString("en-US") : "—",
       utilization: utilization(receipt, (tick) => ({ processed: tick.qualityGate.inspectedUnits, capacity: tick.qualityGate.capacity })),
       throughputBand: throughputBand(receipt, (tick) => tick.qualityGate.inspectedUnits),
       ...common("Quality Gate"),
@@ -299,6 +311,8 @@ export function createBlueprintViewModel(state: SandboxState): BlueprintViewMode
     receiptId: state.baselineReceipt?.runId ?? null,
     engineVersion: state.baselineReceipt?.engineVersion ?? null,
     infeasibilityProof: null,
+    sourceCurrent: true,
+    historicalReason: null,
     runnable: false,
     branchable: false,
     metrics: scenarioMetrics(state.baselineReceipt, state.baselineReceipt),
@@ -311,6 +325,13 @@ export function createBlueprintViewModel(state: SandboxState): BlueprintViewMode
     webMcpStatus: state.webMcpReady ? "ready" : "unavailable",
     busy: state.busy,
     selectedScenarioId: state.selectedScenarioId,
+    authority: {
+      packagingLocked: state.packagingLocked,
+      lockRevision: state.lockRevision,
+      blockedControls: state.packagingLocked ? [...PACKAGING_CONTROL_FIELDS] : [],
+      effectiveTick: state.packagingLocked ? PACKAGING_LOCK_EFFECTIVE_TICK : null,
+      effectiveElapsedMinutes: state.packagingLocked ? PACKAGING_LOCK_EFFECTIVE_MINUTES : null,
+    },
     constraints: [
       { id: "output", label: "+20% output", detail: "At least twenty percent more good output than baseline" },
       { id: "cost", label: "≤8% cost", detail: "Total operating cost may rise by no more than eight percent" },

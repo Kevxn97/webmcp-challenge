@@ -65,7 +65,7 @@ const GET_FACTORY_SNAPSHOT_SPEC: FactoryToolSpec<GetFactorySnapshotInput> = {
   name: "get_factory_snapshot",
   title: "Inspect current factory",
   description:
-    "Read the current immutable factory version, live revision, human locks, stations, baseline metrics, and constraint brief. This does not change state.",
+    "Orient before writing: read the mission, exact thresholds, authority epoch, control capabilities, baseline, evidence index, scenario heads, and copy-ready preconditions. This does not change state.",
   inputSchema: GET_FACTORY_SNAPSHOT_SCHEMA,
   readOnly: true,
   getRequestId: null,
@@ -89,7 +89,7 @@ const CREATE_SCENARIO_SPEC: FactoryToolSpec<CreateScenarioInput> = {
   name: "create_scenario",
   title: "Create planning scenario",
   description:
-    "Create a named scenario from the specified immutable factory version. Fails closed if the factory or human-lock revision changed. This writes local planning state but never changes human locks.",
+    "Create a clean named hypothesis under the authority epoch returned by get_factory_snapshot. The snapshot exposes deterministic two-slot allocation; creation fails with WORKSPACE_FULL rather than replacing a current head. Historical scenario heads are never silently rebased. This writes local planning state but never changes human locks.",
   inputSchema: CREATE_SCENARIO_SCHEMA,
   readOnly: false,
   getRequestId: (input) => input.request_id,
@@ -101,7 +101,7 @@ const APPLY_SCENARIO_CHANGES_SPEC: FactoryToolSpec<ApplyScenarioChangesInput> = 
   name: "apply_scenario_changes",
   title: "Apply scenario settings",
   description:
-    "Atomically apply absolute operating settings to a scenario. Fails closed on stale factory, scenario, or lock revisions and when a human-locked resource would change. This never overrides or edits human locks.",
+    "Atomically apply absolute settings to the current scenario head. Same-value fields normalize to no-ops; human-locked or phase-closed changes fail with committed=false and a recovery route. This never overrides human authority.",
   inputSchema: APPLY_SCENARIO_CHANGES_SCHEMA,
   readOnly: false,
   getRequestId: (input) => input.request_id,
@@ -125,7 +125,7 @@ const COMPARE_SIMULATION_RUNS_SPEC: FactoryToolSpec<CompareSimulationRunsInput> 
   name: "compare_simulation_runs",
   title: "Compare simulation receipts",
   description:
-    "Compare two to four stored deterministic receipts with output, defect, and cost deltas plus feasibility and exact constraint operands. This does not change state.",
+    "Compare two to four stored receipts. The first run_id is the anchor and every delta is candidate minus anchor. Returns exact constraint operands, currentness, dominance, and the best evaluated run under the declared policy. This never claims global optimality and does not change state.",
   inputSchema: COMPARE_SIMULATION_RUNS_SCHEMA,
   readOnly: true,
   getRequestId: null,

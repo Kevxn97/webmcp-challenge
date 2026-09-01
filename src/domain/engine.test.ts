@@ -347,6 +347,7 @@ describe("invariants, idempotency, locks, and validation", () => {
       }),
     ]);
     expect(packagingRejections.map((operation) => operation.operationId)).toEqual([
+      "locked-calibration",
       "locked-changeover-15",
       "locked-same-tick-packaging-9000",
       "locked-retry-packaging-9500",
@@ -356,9 +357,13 @@ describe("invariants, idempotency, locks, and validation", () => {
     );
     expect(
       receipt.rejectedOperations.find(
-        (operation) => operation.operationId === "locked-late-calibration",
-      )?.reason,
-    ).toBe("PRE_SHIFT_ONLY");
+        (operation) => operation.operationId === "locked-calibration",
+      ),
+    ).toMatchObject({
+      resource: "Packaging",
+      reason: "LOCKED_RESOURCE",
+    });
+    expect(receipt.locks[0]?.lockedControlPaths).toContain("calibration");
   });
 
   it("rejects out-of-range settings and post-shift calibration", async () => {

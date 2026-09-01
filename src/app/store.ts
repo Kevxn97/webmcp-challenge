@@ -3,20 +3,27 @@ import {
   createInvalidCostScenarioInput,
   createValidScenarioInput,
   simulateFactory,
+  type FactoryControls,
   type FactoryOperation,
   type FactorySimulationInput,
   type SimulationReceipt,
 } from "../domain";
+import {
+  BASELINE_SCENARIO_VALUES,
+  CONTROL_DEFINITIONS,
+  PACKAGING_CONTROL_FIELDS,
+  PACKAGING_LOCK_EFFECTIVE_MINUTES,
+  PACKAGING_LOCK_EFFECTIVE_TICK,
+  POST_LOCK_AVAILABLE_CONTROL_FIELDS,
+  PRE_SHIFT_CONTROL_FIELDS,
+  SCENARIO_CONTROL_FIELDS,
+  controlValueFromEngineControls,
+  type ScenarioControlField,
+  type ScenarioControlPatch,
+  type ScenarioControlValueMap,
+} from "../shared/controlDefinitions";
 
-export type ScenarioPatch = {
-  mixer_speed_bps?: number;
-  packaging_speed_bps?: number;
-  packaging_changeover_minutes?: 15 | 30 | 45;
-  packaging_calibration?: "standard" | "enhanced";
-  supplier_mode?: "standard" | "expedite";
-  quality_rate_units_per_hour?: 600 | 700 | 800 | 900;
-  warehouse_dock_units_per_hour?: 800 | 900 | 1000;
-};
+export type ScenarioPatch = ScenarioControlPatch;
 
 export type LedgerKind = "human" | "tool" | "agent" | "simulation" | "state" | "system";
 export type LedgerTone = "neutral" | "primary" | "success" | "danger" | "warning";
@@ -38,11 +45,27 @@ export interface ScenarioRecord {
   revision: number;
   headVersionId: string;
   baseFactoryVersionId: string;
+  sourceFactoryRevision: number;
+  sourceLockRevision: number;
   patch: ScenarioPatch;
   placeholder: boolean;
   receipt: SimulationReceipt | null;
   receiptScenarioRevision: number | null;
   receiptLockRevision: number | null;
+}
+
+export interface ScenarioRunEvidence {
+  runId: string;
+  scenarioId: string;
+  scenarioMarker: "A" | "B";
+  scenarioName: string;
+  scenarioRevision: number;
+  scenarioVersionId: string;
+  baseFactoryVersionId: string;
+  sourceFactoryRevision: number;
+  sourceLockRevision: number;
+  patch: ScenarioPatch;
+  receipt: SimulationReceipt;
 }
 
 export interface SandboxState {
@@ -58,6 +81,7 @@ export interface SandboxState {
   baselineReceipt: SimulationReceipt | null;
   scenarios: ScenarioRecord[];
   runs: Record<string, SimulationReceipt>;
+  runEvidence: Record<string, ScenarioRunEvidence>;
   ledger: SandboxLedgerEvent[];
 }
 
@@ -66,6 +90,8 @@ export type SandboxCommandCode =
   | "STALE_SCENARIO"
   | "LOCK_CHANGED"
   | "HUMAN_LOCKED"
+  | "PHASE_CLOSED"
+  | "WORKSPACE_FULL"
   | "VALIDATION_ERROR"
   | "NOT_FOUND"
   | "IDEMPOTENCY_KEY_REUSED"
@@ -107,7 +133,12 @@ const INVALID_COST_PATCH: ScenarioPatch = Object.freeze({
   supplier_mode: "expedite",
 });
 
-function scenarioSlot(marker: "A" | "B", factoryVersionId: string): ScenarioRecord {
+function scenarioSlot(
+  marker: "A" | "B",
+  factoryVersionId: string,
+  factoryRevision = 1,
+  lockRevision = 0,
+): ScenarioRecord {
   const id = `scenario-${marker.toLowerCase()}`;
   return {
     id,
@@ -116,6 +147,8 @@ function scenarioSlot(marker: "A" | "B", factoryVersionId: string): ScenarioReco
     revision: 0,
     headVersionId: `${id}-empty`,
     baseFactoryVersionId: factoryVersionId,
+    sourceFactoryRevision: factoryRevision,
+    sourceLockRevision: lockRevision,
     patch: {},
     placeholder: true,
     receipt: null,
@@ -137,14 +170,32 @@ function freezeState(state: SandboxState): SandboxState {
     receipt: scenario.receipt ? deepFreeze(scenario.receipt) : null,
   }));
   const runs = Object.fromEntries(
-    Object.entries(state.runs).map(([runId, receipt]) => [runId, deepFreeze(receipt)]),
+    Object.entries(state.runs).map(([runId, receipt]) => [
+      runId,
+      deepFreeze(receipt),
+    ]),
+  );
+  const runEvidence = Object.fromEntries(
+    Object.entries(state.runEvidence).map(([runId, evidence]) => [
+      runId,
+      deepFreeze({
+        ...evidence,
+        patch: { ...evidence.patch },
+        receipt: evidence.receipt,
+      }),
+    ]),
   );
   return Object.freeze({
     ...state,
-    baselineReceipt: state.baselineReceipt ? deepFreeze(state.baselineReceipt) : null,
+    baselineReceipt: state.baselineReceipt
+      ? deepFreeze(state.baselineReceipt)
+      : null,
     scenarios: Object.freeze(scenarios) as unknown as ScenarioRecord[],
-    ledger: Object.freeze(state.ledger.map((event) => Object.freeze({ ...event }))) as unknown as SandboxLedgerEvent[],
+    ledger: Object.freeze(
+      state.ledger.map((event) => Object.freeze({ ...event })),
+    ) as unknown as SandboxLedgerEvent[],
     runs: Object.freeze(runs),
+    runEvidence: Object.freeze(runEvidence),
   });
 }
 
@@ -165,40 +216,277 @@ function canonicalFingerprint(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function effectiveScenarioValue<Field extends ScenarioControlField>(
+  scenario: ScenarioRecord,
+  field: Field,
+): ScenarioControlValueMap[Field] {
+  const patchValue = scenario.patch[field];
+  return (patchValue === undefined
+    ? BASELINE_SCENARIO_VALUES[field]
+    : patchValue) as ScenarioControlValueMap[Field];
+}
+
+function normalizeScenarioChanges(
+  scenario: ScenarioRecord,
+  requested: ScenarioPatch,
+): {
+  changed: ScenarioPatch;
+  nextPatch: ScenarioPatch;
+  noOps: ScenarioControlField[];
+} {
+  const changed: Record<string, unknown> = {};
+  const nextPatch = { ...scenario.patch } as Record<string, unknown>;
+  const noOps: ScenarioControlField[] = [];
+
+  for (const field of SCENARIO_CONTROL_FIELDS) {
+    const nextValue = requested[field];
+    if (nextValue === undefined) continue;
+    if (Object.is(nextValue, effectiveScenarioValue(scenario, field))) {
+      noOps.push(field);
+      continue;
+    }
+
+    changed[field] = nextValue;
+    if (Object.is(nextValue, BASELINE_SCENARIO_VALUES[field])) {
+      delete nextPatch[field];
+    } else {
+      nextPatch[field] = nextValue;
+    }
+  }
+
+  return {
+    changed: changed as ScenarioPatch,
+    nextPatch: nextPatch as ScenarioPatch,
+    noOps,
+  };
+}
+
+function cleanPatchForAuthority(
+  patch: ScenarioPatch,
+  packagingLocked: boolean,
+): ScenarioPatch {
+  if (!packagingLocked) return { ...patch };
+  const clean: Record<string, unknown> = {};
+  for (const field of POST_LOCK_AVAILABLE_CONTROL_FIELDS) {
+    const value = patch[field];
+    if (value !== undefined) clean[field] = value;
+  }
+  return clean as ScenarioPatch;
+}
+
+function publicControlValue<Field extends ScenarioControlField>(
+  controls: FactoryControls,
+  field: Field,
+): ScenarioControlValueMap[Field] {
+  return controlValueFromEngineControls(controls, field);
+}
+
+function controlCatalog(controls: FactoryControls, packagingLocked: boolean) {
+  return SCENARIO_CONTROL_FIELDS.map((field) => {
+    const definition = CONTROL_DEFINITIONS[field];
+    const humanLocked = packagingLocked && definition.blockedByPackagingLock;
+    const phaseClosed = packagingLocked
+      && definition.applicationPhase === "pre_shift"
+      && !humanLocked;
+    const domain = definition.domain.type === "range"
+      ? {
+        minimum: definition.domain.minimum,
+        maximum: definition.domain.maximum,
+      }
+      : { enum: [...definition.domain.values] };
+
+    return {
+      control_id: field,
+      label: definition.label,
+      resource: definition.resource,
+      current_value: publicControlValue(controls, field),
+      unit: definition.unit,
+      domain,
+      application_phase: definition.applicationPhase,
+      availability: {
+        status: humanLocked
+          ? "HUMAN_LOCKED"
+          : phaseClosed
+            ? "PHASE_CLOSED"
+            : "AVAILABLE",
+        reason_code: humanLocked
+          ? "HUMAN_AUTHORITY"
+          : phaseClosed
+            ? "PRE_SHIFT_ONLY"
+            : null,
+        effective_tick: packagingLocked ? PACKAGING_LOCK_EFFECTIVE_TICK : null,
+      },
+    };
+  });
+}
+
+function packagingLockProjection(state: Pick<SandboxState, "packagingLocked" | "lockRevision">) {
+  if (!state.packagingLocked) return [];
+  return [{
+    lock_id: `lock-packaging-l${state.lockRevision}`,
+    authority: "human",
+    resource: "Packaging",
+    scope: "all controls",
+    blocked_fields: [...PACKAGING_CONTROL_FIELDS],
+    effective_tick: PACKAGING_LOCK_EFFECTIVE_TICK,
+    effective_elapsed_minutes: PACKAGING_LOCK_EFFECTIVE_MINUTES,
+  }];
+}
+
+function scenarioAuthorityIsCurrent(scenario: ScenarioRecord, state: SandboxState): boolean {
+  return scenario.sourceFactoryRevision === state.factoryRevision
+    && scenario.baseFactoryVersionId === state.factoryVersionId
+    && scenario.sourceLockRevision === state.lockRevision;
+}
+
+type ScenarioCurrentnessStatus =
+  | "CURRENT"
+  | "CURRENT_UNEVALUATED"
+  | "HISTORICAL";
+
+function scenarioCurrentness(scenario: ScenarioRecord, state: SandboxState) {
+  const authorityCurrent = scenarioAuthorityIsCurrent(scenario, state);
+  const receiptCurrent = authorityCurrent
+    && scenario.receipt !== null
+    && scenario.receiptScenarioRevision === scenario.revision
+    && scenario.receiptLockRevision === state.lockRevision;
+  const status: ScenarioCurrentnessStatus = !authorityCurrent
+    ? "HISTORICAL"
+    : receiptCurrent
+      ? "CURRENT"
+      : "CURRENT_UNEVALUATED";
+  return {
+    status,
+    authorityCurrent,
+    receiptCurrent,
+    invalidatedBy: authorityCurrent ? [] : ["AUTHORITY_EPOCH_CHANGED"],
+  };
+}
+
+function evidenceForScenario(
+  scenario: ScenarioRecord,
+  receipt: SimulationReceipt,
+): ScenarioRunEvidence {
+  return {
+    runId: receipt.runId,
+    scenarioId: scenario.id,
+    scenarioMarker: scenario.marker,
+    scenarioName: scenario.name,
+    scenarioRevision: scenario.revision,
+    scenarioVersionId: scenario.headVersionId,
+    baseFactoryVersionId: scenario.baseFactoryVersionId,
+    sourceFactoryRevision: scenario.sourceFactoryRevision,
+    sourceLockRevision: scenario.sourceLockRevision,
+    patch: { ...scenario.patch },
+    receipt,
+  };
+}
+
+export function runEvidenceIsCurrent(
+  evidence: ScenarioRunEvidence,
+  state: SandboxState,
+): boolean {
+  const current = state.scenarios.find(
+    (scenario) => scenario.id === evidence.scenarioId,
+  );
+  return Boolean(
+    current
+    && !current.placeholder
+    && current.headVersionId === evidence.scenarioVersionId
+    && current.revision === evidence.scenarioRevision
+    && current.receipt?.runId === evidence.runId
+    && scenarioAuthorityIsCurrent(current, state)
+    && current.receiptScenarioRevision === current.revision
+    && current.receiptLockRevision === state.lockRevision,
+  );
+}
+
+type ScenarioAllocation =
+  | {
+      status: "ALLOCATE_EMPTY_SLOT" | "REPLACE_HISTORICAL_HEAD";
+      slot: ScenarioRecord;
+    }
+  | { status: "WORKSPACE_FULL"; slot: null };
+
+function nextScenarioAllocation(state: SandboxState): ScenarioAllocation {
+  const ordered = [...state.scenarios].sort((left, right) =>
+    left.marker.localeCompare(right.marker),
+  );
+  const empty = ordered.find((scenario) => scenario.placeholder);
+  if (empty) return { status: "ALLOCATE_EMPTY_SLOT", slot: empty };
+  const historical = ordered.find(
+    (scenario) => !scenarioAuthorityIsCurrent(scenario, state),
+  );
+  if (historical) {
+    return { status: "REPLACE_HISTORICAL_HEAD", slot: historical };
+  }
+  return { status: "WORKSPACE_FULL", slot: null };
+}
+
+function scenarioWorkspaceProjection(state: SandboxState) {
+  const allocation = nextScenarioAllocation(state);
+  return {
+    capacity: state.scenarios.length,
+    occupied: state.scenarios.filter((scenario) => !scenario.placeholder).length,
+    allocation_policy: [
+      "FIRST_EMPTY_SLOT_BY_MARKER",
+      "FIRST_HISTORICAL_HEAD_BY_MARKER",
+      "FAIL_WHEN_ALL_HEADS_ARE_CURRENT",
+    ],
+    next_allocation: allocation.slot
+      ? {
+          status: allocation.status,
+          marker: allocation.slot.marker,
+          scenario_id: allocation.slot.id,
+          displaced_run_id: allocation.slot.receipt?.runId ?? null,
+        }
+      : {
+          status: allocation.status,
+          marker: null,
+          scenario_id: null,
+          displaced_run_id: null,
+        },
+  };
+}
+
+function continuationForScenario(state: SandboxState, scenario: ScenarioRecord) {
+  return {
+    factory_version_id: state.factoryVersionId,
+    expected_factory_revision: state.factoryRevision,
+    expected_lock_revision: state.lockRevision,
+    scenario_id: scenario.id,
+    expected_scenario_revision: scenario.revision,
+  };
+}
+
 function patchToOperations(
   patch: ScenarioPatch,
   prefix: string,
   tick = 0,
 ): FactoryOperation[] {
   const operations: FactoryOperation[] = [];
-  if (patch.mixer_speed_bps !== undefined) {
-    operations.push({ operationId: `${prefix}-mixer-speed`, tick, actor: "model", kind: "SET_MIXER_SPEED", valueBps: patch.mixer_speed_bps });
-  }
-  if (patch.packaging_speed_bps !== undefined) {
-    operations.push({ operationId: `${prefix}-packaging-speed`, tick, actor: "model", kind: "SET_PACKAGING_SPEED", valueBps: patch.packaging_speed_bps });
-  }
-  if (patch.packaging_changeover_minutes !== undefined) {
-    operations.push({ operationId: `${prefix}-changeover`, tick, actor: "model", kind: "SET_CHANGEOVER_MINUTES", valueMinutes: patch.packaging_changeover_minutes });
-  }
-  if (patch.packaging_calibration !== undefined) {
-    operations.push({ operationId: `${prefix}-calibration`, tick, actor: "model", kind: "SET_CALIBRATION", value: patch.packaging_calibration });
-  }
-  if (patch.supplier_mode !== undefined) {
-    operations.push({ operationId: `${prefix}-supplier`, tick, actor: "model", kind: "SET_SUPPLIER_MODE", value: patch.supplier_mode });
-  }
-  if (patch.quality_rate_units_per_hour !== undefined) {
-    operations.push({ operationId: `${prefix}-quality`, tick, actor: "model", kind: "SET_QUALITY_RATE", valueUnitsPerHour: patch.quality_rate_units_per_hour });
-  }
-  if (patch.warehouse_dock_units_per_hour !== undefined) {
-    operations.push({ operationId: `${prefix}-warehouse`, tick, actor: "model", kind: "SET_WAREHOUSE_RATE", valueUnitsPerHour: patch.warehouse_dock_units_per_hour });
+  for (const field of SCENARIO_CONTROL_FIELDS) {
+    const value = patch[field];
+    if (value === undefined) continue;
+    const definition = CONTROL_DEFINITIONS[field];
+    operations.push({
+      operationId: `${prefix}-${definition.operation.idSuffix}`,
+      tick,
+      actor: "model",
+      kind: definition.operation.kind,
+      [definition.operation.valueKey]: value,
+    } as unknown as FactoryOperation);
   }
   return operations;
 }
 
-function inputForScenario(scenario: ScenarioRecord, packagingLocked: boolean): FactorySimulationInput {
+function inputForScenario(
+  scenario: ScenarioRecord,
+  authority: { packagingLocked: boolean; lockRevision: number },
+): FactorySimulationInput {
   const input = createBaselineInput();
   const prefix = `${scenario.id}-r${scenario.revision}`;
-  if (!packagingLocked) {
+  if (!authority.packagingLocked) {
     return { ...input, operations: patchToOperations(scenario.patch, prefix) };
   }
 
@@ -206,13 +494,17 @@ function inputForScenario(scenario: ScenarioRecord, packagingLocked: boolean): F
     ...input,
     operations: [
       {
-        operationId: `human-packaging-lock-l${scenario.receiptLockRevision ?? 1}`,
-        tick: 16,
+        operationId: `human-packaging-lock-l${authority.lockRevision}`,
+        tick: PACKAGING_LOCK_EFFECTIVE_TICK,
         actor: "human",
         kind: "LOCK_RESOURCE",
         resource: "Packaging",
       },
-      ...patchToOperations(scenario.patch, prefix, 16),
+      ...patchToOperations(
+        scenario.patch,
+        prefix,
+        PACKAGING_LOCK_EFFECTIVE_TICK,
+      ),
     ],
   };
 }
@@ -240,6 +532,7 @@ export class SandboxStore {
     baselineReceipt: null,
     scenarios: [scenarioSlot("A", "factory-v1"), scenarioSlot("B", "factory-v1")],
     runs: {},
+    runEvidence: {},
     ledger: [],
   });
 
@@ -280,6 +573,28 @@ export class SandboxStore {
     };
   }
 
+  private rejectWrite(
+    code: SandboxCommandCode,
+    message: string,
+    details: Record<string, unknown>,
+    auditDetail: string,
+  ): never {
+    const next = this.appendEvent(this.state, {
+      kind: "system",
+      label: code.startsWith("STALE") || code === "LOCK_CHANGED"
+        ? "Stale write rejected"
+        : "Write rejected",
+      detail: `NO COMMIT · ${auditDetail}`,
+      tone: "warning",
+    });
+    this.publish(next);
+    throw new SandboxCommandError(code, message, {
+      ...details,
+      committed: false,
+      audit_recorded: true,
+    });
+  }
+
   async hydrateShowcase() {
     if (this.hydratePromise) return this.hydratePromise;
     this.hydratePromise = (async () => {
@@ -289,9 +604,12 @@ export class SandboxStore {
         simulateFactory(createValidScenarioInput()),
       ]);
 
-      const factoryVersionId = "factory-v1";
+      const historicalFactoryVersionId = "factory-v1";
+      const currentFactoryRevision = 2;
+      const currentFactoryVersionId = "factory-v2";
+      const currentLockRevision = 1;
       const scenarioA: ScenarioRecord = {
-        ...scenarioSlot("A", factoryVersionId),
+        ...scenarioSlot("A", historicalFactoryVersionId, 1, 0),
         name: "Scenario A · expedite",
         revision: 1,
         headVersionId: "scenario-a-v1",
@@ -301,9 +619,9 @@ export class SandboxStore {
         receiptScenarioRevision: 1,
         receiptLockRevision: 0,
       };
-      const scenarioB: ScenarioRecord = {
-        ...scenarioSlot("B", factoryVersionId),
-        name: "Scenario B · constrained",
+      const historicalScenarioB: ScenarioRecord = {
+        ...scenarioSlot("B", historicalFactoryVersionId, 1, 0),
+        name: "Scenario B · standard",
         revision: 1,
         headVersionId: "scenario-b-v1",
         patch: { ...VALID_PATCH },
@@ -312,17 +630,63 @@ export class SandboxStore {
         receiptScenarioRevision: 1,
         receiptLockRevision: 0,
       };
+      const recoveryHead: ScenarioRecord = {
+        ...scenarioSlot(
+          "B",
+          currentFactoryVersionId,
+          currentFactoryRevision,
+          currentLockRevision,
+        ),
+        name: "Scenario B · post-lock recovery",
+        revision: 2,
+        headVersionId: "scenario-b-v2",
+        patch: { mixer_speed_bps: 9_500 },
+        placeholder: false,
+        receipt: null,
+        receiptScenarioRevision: null,
+        receiptLockRevision: null,
+      };
+      const lockedReceipt = await simulateFactory(inputForScenario(recoveryHead, {
+        packagingLocked: true,
+        lockRevision: currentLockRevision,
+      }));
+      const scenarioB: ScenarioRecord = {
+        ...recoveryHead,
+        receipt: lockedReceipt,
+        receiptScenarioRevision: recoveryHead.revision,
+        receiptLockRevision: currentLockRevision,
+      };
 
       let next: SandboxState = {
         ...this.state,
         hydrated: true,
         busy: false,
         baselineReceipt,
+        factoryRevision: currentFactoryRevision,
+        factoryVersionId: currentFactoryVersionId,
+        lockRevision: currentLockRevision,
+        packagingLocked: true,
+        selectedScenarioId: scenarioB.id,
         scenarios: [scenarioA, scenarioB],
         runs: {
           [baselineReceipt.runId]: baselineReceipt,
           [invalidReceipt.runId]: invalidReceipt,
           [validReceipt.runId]: validReceipt,
+          [lockedReceipt.runId]: lockedReceipt,
+        },
+        runEvidence: {
+          [invalidReceipt.runId]: evidenceForScenario(
+            scenarioA,
+            invalidReceipt,
+          ),
+          [validReceipt.runId]: evidenceForScenario(
+            historicalScenarioB,
+            validReceipt,
+          ),
+          [lockedReceipt.runId]: evidenceForScenario(
+            scenarioB,
+            lockedReceipt,
+          ),
         },
       };
       const seededEvents: Array<Omit<SandboxLedgerEvent, "id" | "timestamp" | "revision">> = [
@@ -331,22 +695,12 @@ export class SandboxStore {
         { kind: "simulation", label: "Scenario A failed", detail: `Receipt ${invalidReceipt.runId.slice(0, 16)} · cost cap violated`, tone: "danger" },
         { kind: "agent", label: "Generated Scenario B", detail: "Replanned without supplier premium", tone: "primary" },
         { kind: "simulation", label: "Scenario B feasible", detail: `Receipt ${validReceipt.runId.slice(0, 16)} · all constraints pass`, tone: "success" },
+        { kind: "human", label: "Locked Packaging", detail: `Human authority changed · modeled effect tick ${PACKAGING_LOCK_EFFECTIVE_TICK} / T+${PACKAGING_LOCK_EFFECTIVE_MINUTES} min`, tone: "warning" },
+        { kind: "system", label: "Stale write rejected", detail: "NO COMMIT · earlier factory and lock revisions lost authority", tone: "warning" },
+        { kind: "agent", label: "Created post-lock recovery", detail: `${scenarioB.headVersionId} · clean authority branch with Packaging unchanged`, tone: "primary" },
+        { kind: "simulation", label: "Current proof stored", detail: `Receipt ${lockedReceipt.runId.slice(0, 16)} · ${lockedReceipt.upperBoundProof?.exactInequality ?? "upper bound stored"}`, tone: "danger" },
       ];
       for (const event of seededEvents) next = this.appendEvent(next, event);
-
-      next = {
-        ...next,
-        factoryRevision: 2,
-        factoryVersionId: "factory-v2",
-        lockRevision: 1,
-        packagingLocked: true,
-      };
-      next = this.appendEvent(next, {
-        kind: "human",
-        label: "Locked Packaging",
-        detail: "Human constraint changed · prior receipts are now stale",
-        tone: "warning",
-      });
       this.publish(next);
     })().catch((error) => {
       const message = error instanceof Error ? error.message : "Unknown initialization error";
@@ -380,7 +734,9 @@ export class SandboxStore {
     next = this.appendEvent(next, {
       kind: "human",
       label: `${locked ? "Locked" : "Unlocked"} Packaging`,
-      detail: locked ? "Agent changes to Packaging now fail closed" : "Packaging is available for future scenario revisions",
+      detail: locked
+        ? `Human authority changed · Packaging blocked · modeled effect tick ${PACKAGING_LOCK_EFFECTIVE_TICK} / T+${PACKAGING_LOCK_EFFECTIVE_MINUTES} min`
+        : "Packaging is available for future scenario revisions",
       tone: locked ? "warning" : "success",
     });
     this.publish(next);
@@ -424,7 +780,10 @@ export class SandboxStore {
     };
     this.publish({ ...this.state, busy: true });
     try {
-      const receipt = await simulateFactory(inputForScenario(scenario, source.packagingLocked));
+      const receipt = await simulateFactory(inputForScenario(scenario, {
+        packagingLocked: source.packagingLocked,
+        lockRevision: source.lockRevision,
+      }));
       assertNotAborted(signal);
       const current = this.state.scenarios.find((item) => item.id === scenarioId);
       if (this.state.lockRevision !== source.lockRevision || this.state.packagingLocked !== source.packagingLocked) {
@@ -456,8 +815,14 @@ export class SandboxStore {
       let next: SandboxState = {
         ...this.state,
         busy: false,
-        scenarios: this.state.scenarios.map((item) => item.id === scenarioId ? updated : item),
+        scenarios: this.state.scenarios.map((item) =>
+          item.id === scenarioId ? updated : item
+        ),
         runs: { ...this.state.runs, [receipt.runId]: receipt },
+        runEvidence: {
+          ...this.state.runEvidence,
+          [receipt.runId]: evidenceForScenario(updated, receipt),
+        },
       };
       next = this.appendEvent(next, {
         kind: actor === "human" ? "human" : "simulation",
@@ -478,11 +843,18 @@ export class SandboxStore {
     const selected = this.state.scenarios.find((scenario) => scenario.id === this.state.selectedScenarioId);
     if (!selected || selected.placeholder) return;
     const nextRevision = selected.revision + 1;
+    const authorityChanged = !scenarioAuthorityIsCurrent(selected, this.state);
     const branched: ScenarioRecord = {
       ...selected,
       name: `${selected.marker === "B" ? "Scenario B" : "Scenario A"} · branch ${nextRevision}`,
       revision: nextRevision,
       headVersionId: `${selected.id}-v${nextRevision}`,
+      baseFactoryVersionId: this.state.factoryVersionId,
+      sourceFactoryRevision: this.state.factoryRevision,
+      sourceLockRevision: this.state.lockRevision,
+      patch: authorityChanged
+        ? cleanPatchForAuthority(selected.patch, this.state.packagingLocked)
+        : { ...selected.patch },
       receipt: null,
       receiptScenarioRevision: null,
       receiptLockRevision: null,
@@ -494,7 +866,9 @@ export class SandboxStore {
     next = this.appendEvent(next, {
       kind: "human",
       label: `Branched ${selected.name}`,
-      detail: `Created immutable ${branched.headVersionId}`,
+      detail: authorityChanged
+        ? `Fresh authority branch ${branched.headVersionId} · historical Packaging and pre-shift overrides removed`
+        : `Created immutable ${branched.headVersionId}`,
       tone: "primary",
     });
     this.publish(next);
@@ -503,16 +877,23 @@ export class SandboxStore {
   reset() {
     this.requests.clear();
     const factoryRevision = this.state.factoryRevision + 1;
+    const lockRevision = this.state.lockRevision + 1;
     let next: SandboxState = {
       ...this.state,
       busy: false,
       factoryRevision,
       factoryVersionId: `factory-v${factoryRevision}`,
-      lockRevision: this.state.lockRevision + 1,
+      lockRevision,
       packagingLocked: false,
       selectedScenarioId: "scenario-a",
-      scenarios: [scenarioSlot("A", `factory-v${factoryRevision}`), scenarioSlot("B", `factory-v${factoryRevision}`)],
-      runs: this.state.baselineReceipt ? { [this.state.baselineReceipt.runId]: this.state.baselineReceipt } : {},
+      scenarios: [
+        scenarioSlot("A", `factory-v${factoryRevision}`, factoryRevision, lockRevision),
+        scenarioSlot("B", `factory-v${factoryRevision}`, factoryRevision, lockRevision),
+      ],
+      runs: this.state.baselineReceipt
+        ? { [this.state.baselineReceipt.runId]: this.state.baselineReceipt }
+        : {},
+      runEvidence: {},
       ledger: [],
     };
     next = this.appendEvent(next, {
@@ -583,16 +964,65 @@ export class SandboxStore {
         } : null,
       };
     };
+    const locks = packagingLockProjection(this.state);
+    const scenarioHeads = this.state.scenarios
+      .filter((scenario) => !scenario.placeholder)
+      .map((scenario) => {
+        const currentness = scenarioCurrentness(scenario, this.state);
+        return {
+          scenario_id: scenario.id,
+          name: scenario.name,
+          revision: scenario.revision,
+          head_version_id: scenario.headVersionId,
+          source_factory_revision: scenario.sourceFactoryRevision,
+          source_lock_revision: scenario.sourceLockRevision,
+          authority_is_current: currentness.authorityCurrent,
+          latest_run_id: scenario.receipt?.runId ?? null,
+          source_is_current: currentness.receiptCurrent,
+          currentness: {
+            status: currentness.status,
+            invalidated_by: currentness.invalidatedBy,
+          },
+        };
+      });
+
     return {
       factory_revision: this.state.factoryRevision,
       factory_version_id: this.state.factoryVersionId,
       lock_revision: this.state.lockRevision,
-      locks: this.state.packagingLocked ? [{ resource: "Packaging", scope: "all controls" }] : [],
+      continuation: {
+        factory_version_id: this.state.factoryVersionId,
+        expected_factory_revision: this.state.factoryRevision,
+        expected_lock_revision: this.state.lockRevision,
+      },
+      authority: {
+        owner: "human",
+        packaging_locked: this.state.packagingLocked,
+        lock_revision: this.state.lockRevision,
+        blocked_fields: this.state.packagingLocked ? [...PACKAGING_CONTROL_FIELDS] : [],
+        simulation_effect: this.state.packagingLocked ? {
+          effective_tick: PACKAGING_LOCK_EFFECTIVE_TICK,
+          effective_elapsed_minutes: PACKAGING_LOCK_EFFECTIVE_MINUTES,
+        } : null,
+      },
+      locks,
+      scenario_workspace: scenarioWorkspaceProjection(this.state),
       mission: {
+        objective: "maximize_good_output_subject_to_hard_constraints",
         output_gain_min_basis_points: 2_000,
         cost_increase_max_basis_points: 800,
         defect_rate_may_increase: false,
         new_machine_limit: 0,
+        derived_minimum_good_output_units: baseline?.baselineComparison.targetGoodOutputUnits ?? 10_937,
+        selection_policy: [
+          "CURRENT_AND_VALID",
+          "ALL_HARD_CONSTRAINTS_PASS",
+          "MAX_GOOD_OUTPUT",
+          "MIN_TOTAL_COST",
+          "MIN_DEFECT_RATE",
+          "MIN_CHANGED_CONTROLS",
+          "CANONICAL_RUN_ID",
+        ],
       },
       baseline_run_id: this.state.baselineReceipt?.runId ?? null,
       baseline_metrics: baseline ? {
@@ -602,15 +1032,15 @@ export class SandboxStore {
         total_cost_micro_eur: baseline.totalCostMicroEur,
         defect_rate_fraction: `${baseline.rawCounters.badUnits}/${baseline.rawCounters.grossUnits}`,
       } : null,
-      current_controls: controls ? {
-        mixer_speed_bps: controls.mixerSpeedBps,
-        packaging_speed_bps: controls.packagingSpeedBps,
-        packaging_changeover_minutes: controls.changeoverMinutes,
-        packaging_calibration: controls.calibration,
-        quality_rate_units_per_hour: controls.qualityRateUnitsPerHour,
-        warehouse_dock_units_per_hour: controls.warehouseRateUnitsPerHour,
-        supplier_mode: controls.supplierMode,
-      } : null,
+      current_controls: controls
+        ? Object.fromEntries(
+            SCENARIO_CONTROL_FIELDS.map((field) => [
+              field,
+              publicControlValue(controls, field),
+            ]),
+          )
+        : null,
+      control_catalog: controls ? controlCatalog(controls, this.state.packagingLocked) : [],
       stations: baseline ? [
         station(
           "supplier",
@@ -666,15 +1096,30 @@ export class SandboxStore {
         ending_upstream_queue: item.endingUpstreamQueue,
         queue_unit: item.queueUnit,
       })) ?? [],
-      scenario_heads: this.state.scenarios
-        .filter((scenario) => !scenario.placeholder)
-        .map((scenario) => ({
-          scenario_id: scenario.id,
-          name: scenario.name,
-          revision: scenario.revision,
-          head_version_id: scenario.headVersionId,
-          latest_run_id: scenario.receipt?.runId ?? null,
-          source_is_current: scenario.receiptLockRevision === this.state.lockRevision && scenario.receiptScenarioRevision === scenario.revision,
+      scenario_heads: scenarioHeads,
+      evidence_index: Object.values(this.state.runEvidence)
+        .sort((left, right) => left.runId.localeCompare(right.runId))
+        .map((evidence) => ({
+          run_id: evidence.runId,
+          scenario_id: evidence.scenarioId,
+          scenario_marker: evidence.scenarioMarker,
+          scenario_revision: evidence.scenarioRevision,
+          scenario_version_id: evidence.scenarioVersionId,
+          source_factory_version_id: evidence.baseFactoryVersionId,
+          source_factory_revision: evidence.sourceFactoryRevision,
+          source_lock_revision: evidence.sourceLockRevision,
+          display_label: evidence.scenarioName,
+          label_trust: "UNTRUSTED_DISPLAY_TEXT",
+          patch: { ...evidence.patch },
+          source_is_current: runEvidenceIsCurrent(evidence, this.state),
+          feasibility: evidence.receipt.feasibilityStatus,
+          good_output_units: evidence.receipt.rawCounters.goodOutputUnits,
+          total_cost_micro_eur: evidence.receipt.totalCostMicroEur,
+          proof: evidence.receipt.upperBoundProof ? {
+            exact_inequality:
+              evidence.receipt.upperBoundProof.exactInequality,
+            proven: evidence.receipt.upperBoundProof.proven,
+          } : null,
         })),
     };
   }
@@ -684,18 +1129,27 @@ export class SandboxStore {
     if (!scenario || (scenarioVersionId && scenarioVersionId !== scenario.headVersionId)) {
       throw new SandboxCommandError("NOT_FOUND", "Scenario version not found.", { scenario_id: scenarioId });
     }
+    const currentness = scenarioCurrentness(scenario, this.state);
     return {
       scenario_id: scenario.id,
       name: scenario.name,
       scenario_revision: scenario.revision,
       scenario_version_id: scenario.headVersionId,
       base_factory_version_id: scenario.baseFactoryVersionId,
+      source_factory_revision: scenario.sourceFactoryRevision,
+      source_lock_revision: scenario.sourceLockRevision,
+      authority_is_current: currentness.authorityCurrent,
       patch: { ...scenario.patch },
       lock_revision: this.state.lockRevision,
-      locks: this.state.packagingLocked ? [{ resource: "Packaging", scope: "all controls" }] : [],
+      locks: packagingLockProjection(this.state),
       latest_run_id: scenario.receipt?.runId ?? null,
       latest_receipt: scenario.receipt ? this.simulationResult(scenario.receipt, scenario.id, scenario.headVersionId) : null,
-      source_is_current: scenario.receiptLockRevision === this.state.lockRevision && scenario.receiptScenarioRevision === scenario.revision,
+      source_is_current: currentness.receiptCurrent,
+      currentness: {
+        status: currentness.status,
+        invalidated_by: currentness.invalidatedBy,
+      },
+      continuation: continuationForScenario(this.state, scenario),
     };
   }
 
@@ -708,21 +1162,69 @@ export class SandboxStore {
   }) {
     return this.idempotent("create_scenario", input.request_id, input, () => {
       if (input.expected_factory_revision !== this.state.factoryRevision || input.factory_version_id !== this.state.factoryVersionId) {
-        throw new SandboxCommandError("STALE_FACTORY", "The factory changed. Read the current snapshot before creating a scenario.", {
-          current_factory_revision: this.state.factoryRevision,
-          current_factory_version_id: this.state.factoryVersionId,
-        });
+        return this.rejectWrite(
+          "STALE_FACTORY",
+          "The factory changed. Read the current snapshot before creating a scenario.",
+          {
+            precondition_diff: {
+              expected_factory_revision: input.expected_factory_revision,
+              current_factory_revision: this.state.factoryRevision,
+              expected_factory_version_id: input.factory_version_id,
+              current_factory_version_id: this.state.factoryVersionId,
+              expected_lock_revision: input.expected_lock_revision,
+              current_lock_revision: this.state.lockRevision,
+            },
+            recovery: {
+              tool: "get_factory_snapshot",
+              arguments: {},
+              fresh_scenario_required: true,
+              fresh_request_id_required: true,
+            },
+          },
+          `factory r${input.expected_factory_revision} expected; r${this.state.factoryRevision} current`,
+        );
       }
       if (input.expected_lock_revision !== this.state.lockRevision) {
-        throw new SandboxCommandError("LOCK_CHANGED", "The human lock state changed. Read the factory snapshot before creating a scenario.", {
-          current_lock_revision: this.state.lockRevision,
-        });
+        return this.rejectWrite(
+          "LOCK_CHANGED",
+          "The human lock state changed. Read the factory snapshot before creating a scenario.",
+          {
+            precondition_diff: {
+              expected_lock_revision: input.expected_lock_revision,
+              current_lock_revision: this.state.lockRevision,
+            },
+            recovery: {
+              tool: "get_factory_snapshot",
+              arguments: {},
+              fresh_scenario_required: true,
+              fresh_request_id_required: true,
+            },
+          },
+          `lock r${input.expected_lock_revision} expected; r${this.state.lockRevision} current`,
+        );
       }
-      const slot = this.state.scenarios.find((scenario) => scenario.placeholder)
-        ?? this.state.scenarios.find((scenario) => scenario.id !== this.state.selectedScenarioId)
-        ?? this.state.scenarios[0];
-      if (!slot) throw new SandboxCommandError("INTERNAL_ERROR", "The scenario workspace could not allocate a comparison slot.");
-      const scenarioId = slot.placeholder ? slot.id : `scenario-${this.state.eventRevision + 1}`;
+
+      const allocation = nextScenarioAllocation(this.state);
+      if (!allocation.slot) {
+        return this.rejectWrite(
+          "WORKSPACE_FULL",
+          "Both scenario slots contain current heads. No current hypothesis was displaced.",
+          {
+            scenario_workspace: scenarioWorkspaceProjection(this.state),
+            recovery: {
+              tool: "get_factory_snapshot",
+              arguments: {},
+              reuse_current_scenario_required: true,
+              fresh_request_id_required: true,
+            },
+          },
+          "both scenario slots contain current authority-bound heads",
+        );
+      }
+      const slot = allocation.slot;
+      const scenarioId = slot.placeholder
+        ? slot.id
+        : `scenario-${this.state.eventRevision + 1}`;
       const created: ScenarioRecord = {
         ...slot,
         id: scenarioId,
@@ -730,6 +1232,8 @@ export class SandboxStore {
         revision: 1,
         headVersionId: `${scenarioId}-v1`,
         baseFactoryVersionId: this.state.factoryVersionId,
+        sourceFactoryRevision: this.state.factoryRevision,
+        sourceLockRevision: this.state.lockRevision,
         patch: {},
         placeholder: false,
         receipt: null,
@@ -744,16 +1248,20 @@ export class SandboxStore {
       next = this.appendEvent(next, {
         kind: "tool",
         label: `Created ${input.name}`,
-        detail: `${created.headVersionId} · baseline remains immutable`,
+        detail: `${created.headVersionId} · clean authority branch at lock r${created.sourceLockRevision}`,
         tone: "primary",
       });
       this.publish(next);
       return {
+        committed: true,
         scenario_id: created.id,
         scenario_revision: created.revision,
         scenario_version_id: created.headVersionId,
+        source_lock_revision: created.sourceLockRevision,
         lock_revision: this.state.lockRevision,
+        allocation_status: allocation.status,
         archived_scenario_id: slot.placeholder ? null : slot.id,
+        continuation: continuationForScenario(this.state, created),
       };
     });
   }
@@ -770,37 +1278,163 @@ export class SandboxStore {
       const scenario = this.state.scenarios.find((item) => item.id === input.scenario_id && !item.placeholder);
       if (!scenario) throw new SandboxCommandError("NOT_FOUND", "Scenario not found.");
       if (input.expected_factory_revision !== this.state.factoryRevision) {
-        throw new SandboxCommandError("STALE_FACTORY", "The factory changed. Read the current snapshot before revising a scenario.", {
-          current_factory_revision: this.state.factoryRevision,
-          current_factory_version_id: this.state.factoryVersionId,
-        });
+        return this.rejectWrite(
+          "STALE_FACTORY",
+          "The factory authority epoch changed. No scenario changes were applied.",
+          {
+            precondition_diff: {
+              expected_factory_revision: input.expected_factory_revision,
+              current_factory_revision: this.state.factoryRevision,
+              expected_lock_revision: input.expected_lock_revision,
+              current_lock_revision: this.state.lockRevision,
+            },
+            recovery: {
+              tool: "get_factory_snapshot",
+              arguments: {},
+              fresh_scenario_required: true,
+              fresh_request_id_required: true,
+            },
+          },
+          `factory r${input.expected_factory_revision} / lock r${input.expected_lock_revision} expected; factory r${this.state.factoryRevision} / lock r${this.state.lockRevision} current`,
+        );
       }
       if (input.expected_lock_revision !== this.state.lockRevision) {
-        throw new SandboxCommandError("LOCK_CHANGED", "The human lock state changed. Read the factory snapshot and replan.", {
-          current_lock_revision: this.state.lockRevision,
-        });
+        return this.rejectWrite(
+          "LOCK_CHANGED",
+          "The human lock state changed. Read the factory snapshot and create a fresh scenario.",
+          {
+            precondition_diff: {
+              expected_lock_revision: input.expected_lock_revision,
+              current_lock_revision: this.state.lockRevision,
+            },
+            recovery: {
+              tool: "get_factory_snapshot",
+              arguments: {},
+              fresh_scenario_required: true,
+              fresh_request_id_required: true,
+            },
+          },
+          `lock r${input.expected_lock_revision} expected; r${this.state.lockRevision} current`,
+        );
       }
       if (input.expected_scenario_revision !== scenario.revision) {
-        throw new SandboxCommandError("STALE_SCENARIO", "The scenario head changed. Read the scenario snapshot before retrying.", {
-          current_head_version_id: scenario.headVersionId,
-          current_scenario_revision: scenario.revision,
-        });
+        return this.rejectWrite(
+          "STALE_SCENARIO",
+          "The scenario head changed. Read the scenario snapshot before retrying.",
+          {
+            precondition_diff: {
+              expected_scenario_revision: input.expected_scenario_revision,
+              current_scenario_revision: scenario.revision,
+              current_head_version_id: scenario.headVersionId,
+            },
+            recovery: {
+              tool: "get_scenario_snapshot",
+              arguments: { scenario_id: scenario.id },
+              fresh_scenario_required: false,
+              fresh_request_id_required: true,
+            },
+          },
+          `scenario r${input.expected_scenario_revision} expected; r${scenario.revision} current`,
+        );
       }
-      const packagingKeys: Array<keyof ScenarioPatch> = ["packaging_speed_bps", "packaging_changeover_minutes", "packaging_calibration"];
-      const blocked = packagingKeys.filter((key) => input.changes[key] !== undefined);
+      if (!scenarioAuthorityIsCurrent(scenario, this.state)) {
+        return this.rejectWrite(
+          "STALE_SCENARIO",
+          "This scenario belongs to an earlier human-authority epoch. Create a fresh scenario before replanning.",
+          {
+            source_factory_revision: scenario.sourceFactoryRevision,
+            current_factory_revision: this.state.factoryRevision,
+            source_lock_revision: scenario.sourceLockRevision,
+            current_lock_revision: this.state.lockRevision,
+            recovery: {
+              tool: "get_factory_snapshot",
+              arguments: {},
+              fresh_scenario_required: true,
+              fresh_request_id_required: true,
+            },
+          },
+          `scenario ${scenario.headVersionId} is historical under lock r${this.state.lockRevision}`,
+        );
+      }
+
+      const normalized = normalizeScenarioChanges(scenario, input.changes);
+      const changedFields = Object.keys(normalized.changed) as ScenarioControlField[];
+      const blocked = PACKAGING_CONTROL_FIELDS.filter(
+        (field) => normalized.changed[field] !== undefined,
+      );
       if (this.state.packagingLocked && blocked.length > 0) {
-        throw new SandboxCommandError("HUMAN_LOCKED", "Packaging is locked by the human operator. No scenario changes were applied.", {
-          locked_resource: "Packaging",
-          blocked_fields: blocked,
-          current_lock_revision: this.state.lockRevision,
-        });
+        return this.rejectWrite(
+          "HUMAN_LOCKED",
+          "Packaging is locked by the human operator. No scenario changes were applied.",
+          {
+            locked_resource: "Packaging",
+            blocked_fields: blocked,
+            current_lock_revision: this.state.lockRevision,
+            recovery: {
+              tool: "apply_scenario_changes",
+              arguments: {
+                scenario_id: scenario.id,
+                expected_factory_revision: this.state.factoryRevision,
+                expected_scenario_revision: scenario.revision,
+                expected_lock_revision: this.state.lockRevision,
+              },
+              omit_fields: blocked,
+              fresh_scenario_required: false,
+              fresh_request_id_required: true,
+            },
+          },
+          `human lock blocks ${blocked.join(", ")}`,
+        );
       }
+      const phaseClosed = PRE_SHIFT_CONTROL_FIELDS.filter(
+        (field) => normalized.changed[field] !== undefined,
+      );
+      if (this.state.packagingLocked && phaseClosed.length > 0) {
+        return this.rejectWrite(
+          "PHASE_CLOSED",
+          "One or more pre-shift controls are no longer available at the modeled lock time.",
+          {
+            unavailable_fields: phaseClosed,
+            reason_code: "PRE_SHIFT_ONLY",
+            effective_tick: PACKAGING_LOCK_EFFECTIVE_TICK,
+            effective_elapsed_minutes: PACKAGING_LOCK_EFFECTIVE_MINUTES,
+            recovery: {
+              tool: "apply_scenario_changes",
+              arguments: {
+                scenario_id: scenario.id,
+                expected_factory_revision: this.state.factoryRevision,
+                expected_scenario_revision: scenario.revision,
+                expected_lock_revision: this.state.lockRevision,
+              },
+              omit_fields: phaseClosed,
+              fresh_scenario_required: false,
+              fresh_request_id_required: true,
+            },
+          },
+          `pre-shift phase closed for ${phaseClosed.join(", ")}`,
+        );
+      }
+
+      if (changedFields.length === 0) {
+        return {
+          committed: false,
+          outcome: "NO_OP",
+          scenario_id: scenario.id,
+          scenario_revision: scenario.revision,
+          scenario_version_id: scenario.headVersionId,
+          applied_fields: [],
+          normalized_no_op_fields: normalized.noOps,
+          cleared_receipt_id: null,
+          continuation: continuationForScenario(this.state, scenario),
+        };
+      }
+
       const revision = scenario.revision + 1;
       const updated: ScenarioRecord = {
         ...scenario,
         revision,
         headVersionId: `${scenario.id}-v${revision}`,
-        patch: { ...scenario.patch, ...input.changes },
+        patch: normalized.nextPatch,
         receipt: null,
         receiptScenarioRevision: null,
         receiptLockRevision: null,
@@ -812,16 +1446,21 @@ export class SandboxStore {
       next = this.appendEvent(next, {
         kind: "tool",
         label: `Updated ${scenario.name}`,
-        detail: `${Object.keys(input.changes).length} bounded changes · ${updated.headVersionId}`,
+        detail: `${changedFields.length} bounded changes · ${normalized.noOps.length} no-op · ${updated.headVersionId}`,
         tone: "primary",
       });
       this.publish(next);
       return {
+        committed: true,
+        outcome: "UPDATED",
         scenario_id: updated.id,
         scenario_revision: updated.revision,
         scenario_version_id: updated.headVersionId,
         lock_revision: this.state.lockRevision,
-        applied_fields: Object.keys(input.changes),
+        applied_fields: changedFields,
+        normalized_no_op_fields: normalized.noOps,
+        cleared_receipt_id: scenario.receipt?.runId ?? null,
+        continuation: continuationForScenario(this.state, updated),
       };
     });
   }
@@ -859,7 +1498,44 @@ export class SandboxStore {
         current_head_version_id: scenario.headVersionId,
       });
     }
-    if (input.expected_lock_revision !== this.state.lockRevision) throw new SandboxCommandError("LOCK_CHANGED", "The human lock state changed before simulation.", { current_lock_revision: this.state.lockRevision });
+    if (input.expected_lock_revision !== this.state.lockRevision) {
+      return this.rejectWrite(
+        "LOCK_CHANGED",
+        "The human lock state changed before simulation.",
+        {
+          precondition_diff: {
+            expected_lock_revision: input.expected_lock_revision,
+            current_lock_revision: this.state.lockRevision,
+          },
+          recovery: {
+            tool: "get_factory_snapshot",
+            arguments: {},
+            fresh_scenario_required: true,
+            fresh_request_id_required: true,
+          },
+        },
+        `lock r${input.expected_lock_revision} expected; r${this.state.lockRevision} current`,
+      );
+    }
+    if (!scenarioAuthorityIsCurrent(scenario, this.state)) {
+      return this.rejectWrite(
+        "STALE_SCENARIO",
+        "This scenario belongs to an earlier human-authority epoch. Create a fresh scenario before simulation.",
+        {
+          source_factory_revision: scenario.sourceFactoryRevision,
+          current_factory_revision: this.state.factoryRevision,
+          source_lock_revision: scenario.sourceLockRevision,
+          current_lock_revision: this.state.lockRevision,
+          recovery: {
+            tool: "get_factory_snapshot",
+            arguments: {},
+            fresh_scenario_required: true,
+            fresh_request_id_required: true,
+          },
+        },
+        `scenario ${scenario.headVersionId} is historical under lock r${this.state.lockRevision}`,
+      );
+    }
     const pending = this.runScenario(scenario.id, signal, "tool")
       .then((receipt) => this.simulationData(receipt, scenario.headVersionId));
     const reservation: StoredRequest = {
@@ -915,7 +1591,9 @@ export class SandboxStore {
     const current = this.state.scenarios.find((scenario) => scenario.id === scenarioId);
     return {
       ...data,
-      source_is_current: current?.headVersionId === data.model_version_id
+      source_is_current: current !== undefined
+        && scenarioAuthorityIsCurrent(current, this.state)
+        && current.headVersionId === data.model_version_id
         && current.receipt?.runId === data.run_id
         && current.receiptScenarioRevision === current.revision
         && current.receiptLockRevision === this.state.lockRevision,
@@ -937,30 +1615,110 @@ export class SandboxStore {
     };
   }
 
+  private runSourceIsCurrent(runId: string): boolean {
+    if (this.state.baselineReceipt?.runId === runId) return true;
+    const evidence = this.state.runEvidence[runId];
+    return evidence ? runEvidenceIsCurrent(evidence, this.state) : false;
+  }
+
+  private runChangedControlCount(runId: string): number {
+    const evidence = this.state.runEvidence[runId];
+    return evidence ? Object.keys(evidence.patch).length : 0;
+  }
+
   compareRunSet(runIds: readonly string[]) {
     const [anchorId, ...candidateIds] = runIds;
     const anchor = anchorId ? this.state.runs[anchorId] : undefined;
     if (!anchor || candidateIds.length === 0) {
       throw new SandboxCommandError("NOT_FOUND", "At least two stored simulation runs are required.");
     }
-    const candidates = candidateIds.map((runId) => {
+    const receipts = runIds.map((runId) => {
       const receipt = this.state.runs[runId];
       if (!receipt) throw new SandboxCommandError("NOT_FOUND", "One or more simulation runs were not found.", { missing_run_id: runId });
-      return {
-        run_id: runId,
-        delta_good_output_units: receipt.rawCounters.goodOutputUnits - anchor.rawCounters.goodOutputUnits,
-        delta_bad_units: receipt.rawCounters.badUnits - anchor.rawCounters.badUnits,
-        delta_total_cost_micro_eur: (BigInt(receipt.totalCostMicroEur) - BigInt(anchor.totalCostMicroEur)).toString(),
-        feasibility: receipt.feasibilityStatus,
-        all_constraints_pass: receipt.constraints.every((constraint) => constraint.pass),
-        constraints: receipt.constraints.map(({ code, lhs, operator, rhs, unit, pass }) => ({ code, lhs, operator, rhs, unit, pass })),
-      };
+      return { runId, receipt, sourceIsCurrent: this.runSourceIsCurrent(runId) };
     });
+    const candidates = receipts.slice(1).map(({ runId, receipt, sourceIsCurrent }) => ({
+      run_id: runId,
+      source_is_current: sourceIsCurrent,
+      delta_good_output_units: receipt.rawCounters.goodOutputUnits - anchor.rawCounters.goodOutputUnits,
+      delta_bad_units: receipt.rawCounters.badUnits - anchor.rawCounters.badUnits,
+      delta_total_cost_micro_eur: (BigInt(receipt.totalCostMicroEur) - BigInt(anchor.totalCostMicroEur)).toString(),
+      feasibility: receipt.feasibilityStatus,
+      all_constraints_pass: receipt.constraints.every((constraint) => constraint.pass),
+      constraints: receipt.constraints.map(({ code, lhs, operator, rhs, unit, pass }) => ({ code, lhs, operator, rhs, unit, pass })),
+    }));
+
+    const defectCompare = (left: SimulationReceipt, right: SimulationReceipt) =>
+      left.rawCounters.badUnits * right.rawCounters.grossUnits
+      - right.rawCounters.badUnits * left.rawCounters.grossUnits;
+    const policyCompare = (
+      left: { runId: string; receipt: SimulationReceipt },
+      right: { runId: string; receipt: SimulationReceipt },
+    ) => {
+      const output = right.receipt.rawCounters.goodOutputUnits - left.receipt.rawCounters.goodOutputUnits;
+      if (output !== 0) return output;
+      const cost = BigInt(left.receipt.totalCostMicroEur) - BigInt(right.receipt.totalCostMicroEur);
+      if (cost !== 0n) return cost < 0n ? -1 : 1;
+      const defects = defectCompare(left.receipt, right.receipt);
+      if (defects !== 0) return defects;
+      const leftChanges = this.runChangedControlCount(left.runId);
+      const rightChanges = this.runChangedControlCount(right.runId);
+      return leftChanges - rightChanges || left.runId.localeCompare(right.runId);
+    };
+    const eligible = receipts.filter(({ receipt, sourceIsCurrent }) =>
+      sourceIsCurrent
+      && receipt.feasibilityStatus === "FEASIBLE"
+      && receipt.constraints.every((constraint) => constraint.pass),
+    );
+    const best = [...eligible].sort(policyCompare)[0];
+
+    const dominance: Array<{ run_id: string; dominated_by: string; reasons: string[] }> = [];
+    for (const left of receipts) {
+      for (const right of receipts) {
+        if (left.runId === right.runId) continue;
+        const outputAtLeast = right.receipt.rawCounters.goodOutputUnits >= left.receipt.rawCounters.goodOutputUnits;
+        const costAtMost = BigInt(right.receipt.totalCostMicroEur) <= BigInt(left.receipt.totalCostMicroEur);
+        const defectsAtMost = defectCompare(right.receipt, left.receipt) <= 0;
+        const strict = right.receipt.rawCounters.goodOutputUnits > left.receipt.rawCounters.goodOutputUnits
+          || BigInt(right.receipt.totalCostMicroEur) < BigInt(left.receipt.totalCostMicroEur)
+          || defectCompare(right.receipt, left.receipt) < 0;
+        if (outputAtLeast && costAtMost && defectsAtMost && strict) {
+          const reasons: string[] = [];
+          reasons.push(right.receipt.rawCounters.goodOutputUnits === left.receipt.rawCounters.goodOutputUnits
+            ? "same_good_output"
+            : "higher_good_output");
+          reasons.push(BigInt(right.receipt.totalCostMicroEur) === BigInt(left.receipt.totalCostMicroEur)
+            ? "same_total_cost"
+            : "lower_total_cost");
+          reasons.push(defectCompare(right.receipt, left.receipt) === 0
+            ? "same_defect_rate"
+            : "lower_defect_rate");
+          dominance.push({ run_id: left.runId, dominated_by: right.runId, reasons });
+          break;
+        }
+      }
+    }
+
     return {
       anchor_run_id: anchorId,
+      delta_semantics: "CANDIDATE_MINUS_ANCHOR",
+      anchor_source_is_current: this.runSourceIsCurrent(anchorId),
       anchor_feasibility: anchor.feasibilityStatus,
       anchor_constraints: anchor.constraints.map(({ code, lhs, operator, rhs, unit, pass }) => ({ code, lhs, operator, rhs, unit, pass })),
       comparisons: candidates,
+      selection_policy: [
+        "CURRENT_AND_VALID",
+        "ALL_HARD_CONSTRAINTS_PASS",
+        "MAX_GOOD_OUTPUT",
+        "MIN_TOTAL_COST",
+        "MIN_DEFECT_RATE",
+        "MIN_CHANGED_CONTROLS",
+        "CANONICAL_RUN_ID",
+      ],
+      eligible_current_run_ids: eligible.map((item) => item.runId),
+      best_evaluated_run_id: best?.runId ?? null,
+      claim_level: best ? "BEST_EVALUATED_UNDER_POLICY" : "NO_CURRENT_FEASIBLE_WINNER",
+      dominance,
     };
   }
 

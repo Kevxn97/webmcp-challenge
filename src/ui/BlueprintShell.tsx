@@ -1,14 +1,17 @@
 import { useState } from "react";
 
+import { AuthorityBanner } from "./AuthorityBanner";
 import { EvidenceDialog } from "./EvidenceDialog";
 import { FactoryBlueprint } from "./FactoryBlueprint";
 import { RevisionLedger } from "./RevisionLedger";
 import { ScenarioTable } from "./ScenarioTable";
+import { ReplayGuide } from "./ReplayGuide";
 import { TopBar } from "./TopBar";
-import type { BlueprintViewModel } from "./types";
+import type { BlueprintViewModel, DecisionPacketExport } from "./types";
 
 interface BlueprintShellProps {
   model: BlueprintViewModel;
+  decisionPacket: DecisionPacketExport | null;
   onReset: () => void;
   onTogglePackagingLock: () => void;
   onSelectScenario: (scenarioId: string) => void;
@@ -18,6 +21,7 @@ interface BlueprintShellProps {
 
 export function BlueprintShell({
   model,
+  decisionPacket,
   onReset,
   onTogglePackagingLock,
   onSelectScenario,
@@ -35,6 +39,8 @@ export function BlueprintShell({
         constraints={model.constraints}
         onReset={onReset}
       />
+      <ReplayGuide packagingLocked={model.authority.packagingLocked} />
+      <AuthorityBanner authority={model.authority} />
       <div className="workspace-grid">
         <div className="decision-workspace">
           <FactoryBlueprint
@@ -53,6 +59,7 @@ export function BlueprintShell({
             onRunSelected={onRunSelected}
             onBranch={onBranch}
             onExplain={() => setEvidenceOpen(true)}
+            decisionPacket={decisionPacket}
           />
         </div>
         <RevisionLedger events={model.ledger} />

@@ -20,7 +20,7 @@ Give the browser agent this mission:
 
 Then click **Lock resource** on Packaging and add:
 
-> Retry the last Scenario B write once with a fresh request ID but the exact revisions you held before my click. Do not re-read first. Report the structured error. Then re-read the factory, keep Packaging unchanged, replan using only unlocked controls, simulate one shift, and explain the deterministic evidence.
+> Retry the last Scenario B write once with a fresh request ID but the exact revisions you held before my click. Do not re-read first. Report the structured error. Then re-read the factory, create a fresh scenario under the new human authority, keep Packaging unchanged, apply only controls reported as available, simulate one shift, and explain the deterministic evidence.
 
 The deliberate stale call is rejected atomically. Nothing is applied to the scenario. After a fresh read, the agent can act only inside the new human-defined boundary. The simulator can then issue a conservative lock-bound proof rather than an unsupported explanation.
 
@@ -85,12 +85,12 @@ The top-level page registers exactly six imperative tools through `document.mode
 
 | Tool | Kind | Agent question |
 | --- | --- | --- |
-| `get_factory_snapshot` | Read | What decision context, mission, locks, baseline, bottlenecks, and scenario heads exist now? |
+| `get_factory_snapshot` | Read | What decision context, mission, locks, baseline, evidence, scenario heads, and next deterministic workspace allocation exist now? |
 | `get_scenario_snapshot` | Read | What exact scenario head and receipt exist, and is the source still current? |
-| `create_scenario` | Write | Create a named planning branch from the expected factory and lock revisions. |
+| `create_scenario` | Write | Create a clean branch in the first empty or historical pin; fail with `WORKSPACE_FULL` rather than displacing a current head. |
 | `apply_scenario_changes` | Write | Atomically commit bounded absolute settings to the expected scenario head. |
 | `run_factory_simulation` | Write | Run and store one deterministic 16-hour, 64-tick shift receipt. |
-| `compare_simulation_runs` | Read | Compare two to four immutable receipts using exact deltas and constraints. |
+| `compare_simulation_runs` | Read | Compare two to four immutable receipts; the first run is the anchor and deltas are candidate minus anchor. |
 
 There is deliberately no `lock`, `unlock`, `force`, `approve`, arbitrary patch, optimizer, or machine-control tool. Human locks exist only in the visible interface.
 

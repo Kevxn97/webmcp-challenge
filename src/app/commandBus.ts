@@ -23,6 +23,8 @@ const PUBLIC_CODES = new Set<FactoryToolCode>([
   "STALE_SCENARIO",
   "LOCK_CHANGED",
   "HUMAN_LOCKED",
+  "PHASE_CLOSED",
+  "WORKSPACE_FULL",
   "VALIDATION_ERROR",
   "NOT_FOUND",
   "IDEMPOTENCY_KEY_REUSED",
@@ -89,7 +91,13 @@ export class SandboxFactoryCommandBus implements FactoryCommandBus {
   applyScenarioChanges(input: ApplyScenarioChangesInput, context: ToolExecutionContext) {
     ensureActive(context);
     try {
-      return ok(this.store.applyScenarioChanges(input), "Scenario settings committed atomically.");
+      const result = this.store.applyScenarioChanges(input);
+      return ok(
+        result,
+        result.committed
+          ? "Scenario settings committed atomically."
+          : "Scenario settings already matched the effective values; no state changed.",
+      );
     } catch (error) {
       return rethrowPublic(error);
     }

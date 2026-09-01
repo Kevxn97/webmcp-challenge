@@ -1,6 +1,6 @@
 # Submission readiness
 
-Status date: 2026-08-31
+Status date: 2026-09-01
 
 Agentic Sandbox is technically implemented, locally self-contained, publicly deployed, verified through ChatGPT Work's Cloud Browser against the live URL, documented with a public demo video, and submitted to the OpenAI WebMCP Challenge on Devpost.
 
@@ -20,9 +20,9 @@ The challenge evaluates usefulness, originality, execution, thoughtful WebMCP us
 | Agent-system design | Specified | `docs/AGENT_SYSTEM_DESIGN.md` defines the linked abstraction tower and target contracts. |
 | Agent hardening program | Specified | `docs/AGENT_SYSTEM_HARDENING_PLAN.md` records the code-audited semantic seams, ordered implementation program, and challenge cut line. |
 | Agent evaluation | Specified | `docs/AGENT_EVAL_PLAN.md` defines golden traces, semantic parity, hidden-state, currentness, explanation, and resource-efficiency gates. |
-| Automated verification | Ready | GitHub Actions runs `npm ci` followed by `npm run verify`; the recorded baseline passes 84 Vitest tests and 5 Sites tests. |
+| Automated verification | Ready | GitHub Actions runs `npm ci` followed by `npm run verify`; the current `origin/main` archive passes 102 Vitest tests and 5 Sites tests. |
 | Public HTTPS deployment | Ready | `https://webmcp-challenge-seven.vercel.app` loads without authentication and serves the current production build. |
-| Public demo video | Ready | The public 2:54 YouTube demo includes audio and visible Site Tool calls: `https://www.youtube.com/watch?v=3KwBtJU9fow`. |
+| Public demo video | Ready | The public 2:57 YouTube demo includes audio and visible Site Tool calls: `https://www.youtube.com/watch?v=btkMC8cTHyc`. |
 | Judge access to source | Ready | The repository is public and GitHub detects the MIT license. |
 | Final WebMCP host replay | Ready | The reset, two-scenario, human-lock, stale-write, fresh-read, and locked-replan flow passed against the public deployment in ChatGPT Work's Cloud Browser on 2026-08-29. |
 | Devpost submission | Submitted | Devpost reports `Submitted` and `5/5 steps done`; the public entry is `https://devpost.com/software/agentic-sandbox`. |

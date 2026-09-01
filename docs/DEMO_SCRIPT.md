@@ -1,6 +1,6 @@
 # Demo script — recorded challenge flow
 
-Target duration: 2:50. Public recording: 2:54.
+Target duration: under 3 minutes. Public recording: 2:57.
 
 This is the frozen story contract for the submitted OpenAI WebMCP Challenge build. Keep the Site Tools or Recently Used panel visible whenever a WebMCP call runs so the implementation is undeniable. Do not replace the explicit control loop with an opaque optimizer or hide the one intentional stale-state failure.
 

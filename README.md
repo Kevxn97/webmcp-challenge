@@ -6,6 +6,8 @@ Agentic Sandbox is a deterministic factory decision lab where a person and a bro
 
 [Open the live application →](https://webmcp-challenge-seven.vercel.app)
 
+[Watch the 2:57 product demo →](https://www.youtube.com/watch?v=btkMC8cTHyc)
+
 ![Agentic Sandbox precision-blueprint interface](docs/agentic-sandbox-desktop.png)
 
 Built for the [OpenAI WebMCP Challenge](https://openai.com/webmcp-challenge/), this is not a chatbot pasted onto a dashboard and it is not an AI control surface for real equipment. It is a shared decision protocol whose human UI and six WebMCP Site Tools use the same application-owned command path. “Live” refers to the planning state on the page; the challenge build has no live plant telemetry or machine-control path.

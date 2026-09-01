@@ -1,0 +1,190 @@
+name: Resolve verified Codex review threads
+
+on:
+  push:
+    branches:
+      - feat/challenge-9plus
+    paths:
+      - scripts/.resolve-codex-review-20260901.trigger
+
+permissions:
+  actions: read
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: resolve-verified-codex-review
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: "true"
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v5
+        with:
+          ref: feat/challenge-9plus
+          fetch-depth: 0
+
+      - name: Wait for earlier apply/finalize jobs and refresh the branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 120); do
+            active=$(gh api --paginate \
+              'repos/Kevxn97/webmcp-challenge/actions/runs?branch=feat/challenge-9plus&per_page=100' \
+              --jq '[.workflow_runs[] | select(.id != ${{ github.run_id }}) | select((.status == "queued" or .status == "in_progress") and (.name | test("Apply|Finalize")))] | length')
+            if [ "$active" -eq 0 ]; then
+              break
+            fi
+            sleep 5
+          done
+          git fetch origin feat/challenge-9plus
+          git reset --hard origin/feat/challenge-9plus
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Assert all nine reviewed semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'PACKAGING_LOCK_EFFECTIVE_TICK \* TICK_MINUTES' src/shared/controlDefinitions.ts
+          grep -q 'CONTROL_DEFINITIONS' src/webmcp/schemas.ts
+          grep -q 'scenarioWorkspaceAllocation' src/app/store.ts
+          grep -q 'runProvenance' src/app/store.ts
+          grep -q 'UNEVALUATED' src/app/store.ts
+          grep -q 'CANDIDATE_MINUS_ANCHOR' src/app/store.ts
+          grep -q 'run_ids\[0\] is the anchor' src/webmcp/tools.ts
+          grep -q 'No scenario settings changed' src/app/commandBus.ts
+          grep -q 'mergeScenarioPatch' src/app/store.ts
+          test -f src/app/selectionPolicy.ts
+          test -f src/app/codexReview.test.ts
+
+      - name: Remove temporary apply infrastructure
+        shell: bash
+        run: |
+          set -euo pipefail
+          find .github/workflows -maxdepth 1 -type f \( \
+            -name 'apply-*codex*' -o \
+            -name 'apply-*review*' -o \
+            -name '*staged-review*' -o \
+            -name 'finalize-codex-review-20260901.yml' -o \
+            -name 'resolve-codex-review-20260901.yml' \
+          \) -delete
+          find scripts -maxdepth 1 -type f \( \
+            -name '.apply*review*' -o \
+            -name '.apply*codex*' -o \
+            -name '.finalize-codex-review-20260901.trigger' -o \
+            -name '.resolve-codex-review-20260901.trigger' \
+          \) -delete
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run complete submission gate
+        run: npm run verify | tee /tmp/codex-review-verify.log
+
+      - name: Validate final patch shape
+        run: git diff --check
+
+      - name: Commit final verified tree
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "chore: finalize verified Codex review fixes"
+            git push origin HEAD:feat/challenge-9plus
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Reply to and resolve all reviewed threads
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          comments=$(gh api --paginate repos/Kevxn97/webmcp-challenge/pulls/7/comments)
+
+          reply_once() {
+            local comment_id="$1"
+            local marker="$2"
+            local body="$3"
+            if ! jq -e --argjson parent "$comment_id" --arg marker "$marker" \
+              '.[] | select(.in_reply_to_id == $parent and (.body | contains($marker)))' \
+              <<<"$comments" >/dev/null; then
+              gh api --method POST \
+                "repos/Kevxn97/webmcp-challenge/pulls/7/comments/${comment_id}/replies" \
+                -f body="$body"
+            fi
+          }
+
+          reply_once 3898935978 '<!-- fixed-derived-lock-time -->' \
+            '<!-- fixed-derived-lock-time -->Fixed. `PACKAGING_LOCK_EFFECTIVE_MINUTES` is now derived from `PACKAGING_LOCK_EFFECTIVE_TICK * TICK_MINUTES`, with tick duration owned by the shared simulation definition. Regression coverage lives in `src/app/codexReview.test.ts`.'
+          reply_once 3898935991 '<!-- fixed-canonical-control-registry -->' \
+            '<!-- fixed-canonical-control-registry -->Fixed as a cross-layer change. The registry now owns domains, baselines, engine-control mappings and operation mappings; schemas, validators, public enums/types, baseline controls and engine domain sets derive from it. Regression coverage verifies those projections stay aligned.'
+          reply_once 3898935998 '<!-- fixed-archived-evidence -->' \
+            '<!-- fixed-archived-evidence -->Fixed. Stored receipts now have immutable `runProvenance`; `evidence_index` is built from all stored scenario evidence rather than only active heads, and identifies whether a receipt still backs an active/current head.'
+          reply_once 3898936003 '<!-- fixed-workspace-allocation -->' \
+            '<!-- fixed-workspace-allocation -->Fixed. `get_factory_snapshot` now exposes `scenario_workspace.next_create`, including the deterministic policy, target slot and any displaced head. `create_scenario` uses and returns that same allocation projection.'
+          reply_once 3899084785 '<!-- fixed-selection-tiebreak -->' \
+            '<!-- fixed-selection-tiebreak -->Fixed. The decision packet and comparison tool now share `selectionPolicy.ts`, including the final canonical `runId` tie-break, so both projections nominate the same winner.'
+          reply_once 3899084792 '<!-- fixed-unevaluated-currentness -->' \
+            '<!-- fixed-unevaluated-currentness -->Fixed. Currentness now distinguishes `UNEVALUATED`, `CURRENT`, `STALE_RECEIPT` and `HISTORICAL`; a valid current head without a receipt is no longer mislabeled historical.'
+          reply_once 3899084796 '<!-- fixed-anchor-contract -->' \
+            '<!-- fixed-anchor-contract -->Fixed. Both the tool description and input schema state that `run_ids[0]` is the anchor and every delta is `candidate - anchor`; the response also exposes `delta_convention: CANDIDATE_MINUS_ANCHOR`.'
+          reply_once 3899136078 '<!-- fixed-noop-message -->' \
+            '<!-- fixed-noop-message -->Fixed. The command bus now emits a no-op-specific summary whenever the store returns `committed: false`, so the envelope no longer claims an atomic commit occurred.'
+          reply_once 3899136088 '<!-- fixed-effective-change-count -->' \
+            '<!-- fixed-effective-change-count -->Fixed. Returning a control to baseline removes the override from the scenario patch, and selection scores use provenance-backed effective changed-control counts rather than accepted-operation/edit history.'
+
+          for thread in \
+            PRRT_kwDOUHd95c6d5ceO \
+            PRRT_kwDOUHd95c6d5ceX \
+            PRRT_kwDOUHd95c6d5cee \
+            PRRT_kwDOUHd95c6d5cek \
+            PRRT_kwDOUHd95c6d50Rg \
+            PRRT_kwDOUHd95c6d50Rm \
+            PRRT_kwDOUHd95c6d50Rs \
+            PRRT_kwDOUHd95c6d58eA \
+            PRRT_kwDOUHd95c6d58eH
+          do
+            gh api graphql \
+              -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' \
+              -F id="$thread"
+          done
+
+      - name: Add one verified summary and request a fresh Codex pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing=$(gh api --paginate repos/Kevxn97/webmcp-challenge/issues/7/comments)
+          if ! jq -e '.[] | select(.body | contains("<!-- codex-review-fixes-verified -->"))' <<<"$existing" >/dev/null; then
+            cat > /tmp/body.md <<EOF
+          <!-- codex-review-fixes-verified -->
+          ## Codex review fixes verified
+
+          All nine inline findings were evaluated as valid and addressed as one coherent contract/provenance change. The final tree passed `npm run verify` and `git diff --check` before commit `${{ steps.commit.outputs.sha }}` was published.
+
+          The individual threads contain the concrete fix and regression-test references.
+
+          @codex review
+          EOF
+            gh api --method POST \
+              repos/Kevxn97/webmcp-challenge/issues/7/comments \
+              -f body="$(cat /tmp/body.md)"
+          fi

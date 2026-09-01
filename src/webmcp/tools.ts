@@ -89,7 +89,7 @@ const CREATE_SCENARIO_SPEC: FactoryToolSpec<CreateScenarioInput> = {
   name: "create_scenario",
   title: "Create planning scenario",
   description:
-    "Create a clean named hypothesis under the authority epoch returned by get_factory_snapshot. Historical scenario heads are never silently rebased. This writes local planning state but never changes human locks.",
+    "Create a clean named hypothesis under the authority epoch returned by get_factory_snapshot. The snapshot exposes deterministic two-slot allocation; creation fails with WORKSPACE_FULL rather than replacing a current head. Historical scenario heads are never silently rebased. This writes local planning state but never changes human locks.",
   inputSchema: CREATE_SCENARIO_SCHEMA,
   readOnly: false,
   getRequestId: (input) => input.request_id,
@@ -125,7 +125,7 @@ const COMPARE_SIMULATION_RUNS_SPEC: FactoryToolSpec<CompareSimulationRunsInput> 
   name: "compare_simulation_runs",
   title: "Compare simulation receipts",
   description:
-    "Compare two to four stored receipts with exact deltas, constraint operands, currentness, dominance, and the best evaluated run under the declared policy. This never claims global optimality and does not change state.",
+    "Compare two to four stored receipts. The first run_id is the anchor and every delta is candidate minus anchor. Returns exact constraint operands, currentness, dominance, and the best evaluated run under the declared policy. This never claims global optimality and does not change state.",
   inputSchema: COMPARE_SIMULATION_RUNS_SCHEMA,
   readOnly: true,
   getRequestId: null,

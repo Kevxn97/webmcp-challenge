@@ -129,7 +129,7 @@ Specifically, tool semantics must be independent of:
 
 Every human action that changes legal agent behavior must advance an exposed revision or decision-epoch identity.
 
-UI markers `A` and `B` are presentation pins, not durable scenario identity and not an implicit replacement policy. When the two-slot challenge workspace is full, `create_scenario` must follow a documented deterministic rule or fail with an explicit capacity response. It must never choose a replacement based on `selectedScenarioId`.
+UI markers `A` and `B` are presentation pins, not durable scenario identity and not an implicit replacement policy. Allocation is: first empty pin by marker, otherwise first historical head by marker, otherwise `WORKSPACE_FULL` with no displacement when both heads are current. `get_factory_snapshot` exposes that next allocation before the write, and selection never depends on `selectedScenarioId`.
 
 ## Canonical semantic kernel
 
@@ -339,10 +339,10 @@ Every receipt projection should expose five independent axes:
 
 ### 2. Source currentness
 
-- `CURRENT`
-- `HISTORICAL`
+- receipt evidence: `CURRENT` or `HISTORICAL`;
+- scenario heads: `CURRENT`, `CURRENT_UNEVALUATED`, or `HISTORICAL`.
 
-Include source/current epoch identities and the event or dimension that invalidated current use.
+A current head with no receipt is not historical. Include source/current epoch identities and the event or dimension that invalidated current use.
 
 ### 3. Hard-constraint feasibility
 
@@ -382,7 +382,7 @@ A receipt is immutable and content-addressed, but currentness is relational. Sto
 - which event made it historical;
 - whether it remains comparable as historical evidence.
 
-The bounded `evidence_index` should expose:
+The bounded `evidence_index` is built from immutable source-bound run records, not only the currently pinned scenario heads. Replacing or revising a head therefore cannot erase discovery of its receipt. It should expose:
 
 ```json
 {
@@ -432,7 +432,7 @@ Adversarial scenario names are rendered as text, preserved for display, and igno
 
 ## Comparison and selection contract
 
-The current public grammar uses the first `run_id` as the comparison anchor. Make that ordering explicit in the schema description and result:
+The current public grammar uses the first `run_id` as the comparison anchor. Make that ordering explicit in the schema description and result, with every delta defined as candidate minus anchor:
 
 ```json
 {
@@ -455,8 +455,8 @@ The challenge selection policy should be declared and deterministic:
 3. maximize good output;
 4. minimize total cost;
 5. minimize defect rate;
-6. minimize number of changed controls;
-7. stable canonical identifier as final tie-break.
+6. minimize effective non-baseline control differences, independent of edit history or redundant operations;
+7. use canonical run ID as the final tie-break in every comparison and exported decision projection.
 
 The comparison result should return feasibility, exact deltas, dominance edges, Pareto frontier, policy ordering, and the justified claim level.
 

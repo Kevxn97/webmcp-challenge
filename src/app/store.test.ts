@@ -29,6 +29,21 @@ function createEmptyScenario(store: SandboxStore) {
   });
 }
 
+function createNextScenario(
+  store: SandboxStore,
+  requestId: string,
+  name: string,
+) {
+  const snapshot = store.getSnapshot();
+  return store.createScenario({
+    request_id: requestId,
+    name,
+    factory_version_id: snapshot.factoryVersionId,
+    expected_factory_revision: snapshot.factoryRevision,
+    expected_lock_revision: snapshot.lockRevision,
+  });
+}
+
 describe("SandboxStore", () => {
   it("hydrates historical evidence plus a current post-lock recovery proof", async () => {
     const store = await readyStore();
@@ -53,6 +68,16 @@ describe("SandboxStore", () => {
     expect(view.checks.find((check) => check.id === "COST_8")?.scenarioAPass).toBe(false);
     expect(view.checks.find((check) => check.id === "OUTPUT_20")?.scenarioBPass).toBe(false);
     expect(view.checks.find((check) => check.id === "NO_NEW_MACHINE")?.scenarioBPass).toBe(true);
+
+    const evidenceIndex = store.getFactorySnapshot().evidence_index;
+    expect(evidenceIndex).toHaveLength(3);
+    expect(evidenceIndex.find((item) =>
+      item.scenario_version_id === "scenario-b-v1"
+    )).toMatchObject({
+      source_is_current: false,
+      feasibility: "FEASIBLE",
+      good_output_units: 11_114,
+    });
   });
 
   it("deep-freezes stored patches and receipt evidence exposed through snapshots", async () => {
@@ -65,6 +90,10 @@ describe("SandboxStore", () => {
     expect(Object.isFrozen(receipt?.rawCounters)).toBe(true);
     expect(Object.isFrozen(receipt?.constraints)).toBe(true);
     expect(Object.isFrozen(receipt?.constraints[0]?.exactEvidence)).toBe(true);
+    const evidence = Object.values(store.getSnapshot().runEvidence)[0];
+    expect(Object.isFrozen(evidence)).toBe(true);
+    expect(Object.isFrozen(evidence?.patch)).toBe(true);
+    expect(Object.isFrozen(evidence?.receipt)).toBe(true);
 
     expect(() => {
       (receipt?.rawCounters as { goodOutputUnits: number }).goodOutputUnits = 0;
@@ -174,7 +203,7 @@ describe("SandboxStore", () => {
     );
   });
 
-  it("allocates a full workspace deterministically, independent of selected UI state", async () => {
+  it("replaces only a historical head deterministically and preserves its evidence", async () => {
     const store = await readyStore();
     store.selectScenario("scenario-a");
     const snapshot = store.getSnapshot();
@@ -186,7 +215,10 @@ describe("SandboxStore", () => {
       expected_lock_revision: snapshot.lockRevision,
     });
 
-    expect(created.archived_scenario_id).toBe("scenario-a");
+    expect(created).toMatchObject({
+      allocation_status: "REPLACE_HISTORICAL_HEAD",
+      archived_scenario_id: "scenario-a",
+    });
     expect(store.getSnapshot().scenarios).toHaveLength(2);
     expect(store.getSnapshot().scenarios.find((scenario) => scenario.id === created.scenario_id)).toMatchObject({
       name: "Fresh agent plan",
@@ -195,7 +227,41 @@ describe("SandboxStore", () => {
       receiptScenarioRevision: null,
       receiptLockRevision: null,
     });
-    expect(store.getSnapshot().runs[snapshot.scenarios[0]?.receipt?.runId ?? "missing"]).toBeDefined();
+    const archivedRunId = snapshot.scenarios[0]?.receipt?.runId ?? "missing";
+    expect(store.getSnapshot().runs[archivedRunId]).toBeDefined();
+    expect(store.getSnapshot().runEvidence[archivedRunId]).toBeDefined();
+    expect(store.getFactorySnapshot().evidence_index.find(
+      (item) => item.run_id === archivedRunId,
+    )).toMatchObject({ source_is_current: false });
+  });
+
+  it("fails explicitly instead of replacing a current head when the workspace is full", async () => {
+    const store = await readyStore();
+    store.reset();
+    createNextScenario(store, "request-current-a", "Current A");
+    createNextScenario(store, "request-current-b", "Current B");
+    const before = store.getSnapshot();
+
+    expect(store.getFactorySnapshot().scenario_workspace.next_allocation).toMatchObject({
+      status: "WORKSPACE_FULL",
+      scenario_id: null,
+    });
+    expect(() => createNextScenario(
+      store,
+      "request-current-c",
+      "Must not replace",
+    )).toThrowError(expect.objectContaining({ code: "WORKSPACE_FULL" }));
+
+    const after = store.getSnapshot();
+    expect(after.scenarios.map((scenario) => ({
+      id: scenario.id,
+      name: scenario.name,
+      revision: scenario.revision,
+    }))).toEqual(before.scenarios.map((scenario) => ({
+      id: scenario.id,
+      name: scenario.name,
+      revision: scenario.revision,
+    })));
   });
 
   it("produces a deterministic lock-bound proof from a clean post-lock scenario", async () => {
@@ -328,6 +394,14 @@ describe("SandboxStore", () => {
     expect(snapshot.control_catalog.find((control) => control.control_id === "supplier_mode")).toMatchObject({
       availability: { status: "PHASE_CLOSED", reason_code: "PRE_SHIFT_ONLY" },
     });
+    expect(snapshot.scenario_workspace).toMatchObject({
+      capacity: 2,
+      occupied: 2,
+      next_allocation: {
+        status: "REPLACE_HISTORICAL_HEAD",
+        marker: "A",
+      },
+    });
   });
 
   it("requires a clean scenario after an authority change and normalizes same-value writes", async () => {
@@ -381,11 +455,109 @@ describe("SandboxStore", () => {
     });
     expect(noOp).toMatchObject({
       committed: false,
+      outcome: "NO_OP",
       scenario_revision: fresh.scenario_revision,
       normalized_no_op_fields: ["supplier_mode"],
     });
     expect(store.getSnapshot().scenarios.find((scenario) => scenario.id === fresh.scenario_id)?.revision).toBe(fresh.scenario_revision);
     expect(beforeLock.factoryRevision).not.toBe(locked.factoryRevision);
+  });
+
+  it("reports a current unevaluated head separately from historical evidence", async () => {
+    const store = await readyStore();
+    store.reset();
+    const created = createNextScenario(
+      store,
+      "request-current-unevaluated",
+      "Current unevaluated",
+    );
+
+    expect(store.getScenarioSnapshot(created.scenario_id)).toMatchObject({
+      authority_is_current: true,
+      source_is_current: false,
+      latest_run_id: null,
+      currentness: {
+        status: "CURRENT_UNEVALUATED",
+        invalidated_by: [],
+      },
+    });
+    expect(store.getFactorySnapshot().scenario_heads[0]).toMatchObject({
+      currentness: { status: "CURRENT_UNEVALUATED", invalidated_by: [] },
+    });
+  });
+
+  it("removes baseline-valued overrides and counts effective control differences", async () => {
+    const store = await readyStore();
+    store.reset();
+    const first = createNextScenario(store, "request-effective-a", "Effective A");
+    let state = store.getSnapshot();
+    const raised = store.applyScenarioChanges({
+      request_id: "request-effective-a-raise",
+      scenario_id: first.scenario_id,
+      expected_factory_revision: state.factoryRevision,
+      expected_scenario_revision: first.scenario_revision,
+      expected_lock_revision: state.lockRevision,
+      changes: { warehouse_dock_units_per_hour: 1_000 },
+    });
+    state = store.getSnapshot();
+    const restored = store.applyScenarioChanges({
+      request_id: "request-effective-a-restore",
+      scenario_id: first.scenario_id,
+      expected_factory_revision: state.factoryRevision,
+      expected_scenario_revision: raised.scenario_revision,
+      expected_lock_revision: state.lockRevision,
+      changes: { warehouse_dock_units_per_hour: 900 },
+    });
+    state = store.getSnapshot();
+    const firstConfigured = store.applyScenarioChanges({
+      request_id: "request-effective-a-configure",
+      scenario_id: first.scenario_id,
+      expected_factory_revision: state.factoryRevision,
+      expected_scenario_revision: restored.scenario_revision,
+      expected_lock_revision: state.lockRevision,
+      changes: feasibleChanges,
+    });
+    expect(store.getSnapshot().scenarios.find(
+      (scenario) => scenario.id === first.scenario_id,
+    )?.patch).toEqual(feasibleChanges);
+    const firstRun = await store.simulateScenarioVersion({
+      request_id: "request-effective-a-run",
+      scenario_id: first.scenario_id,
+      expected_factory_revision: state.factoryRevision,
+      expected_scenario_revision: firstConfigured.scenario_revision,
+      expected_lock_revision: state.lockRevision,
+      horizon_shifts: 1,
+    });
+
+    const second = createNextScenario(store, "request-effective-b", "Effective B");
+    state = store.getSnapshot();
+    const secondConfigured = store.applyScenarioChanges({
+      request_id: "request-effective-b-configure",
+      scenario_id: second.scenario_id,
+      expected_factory_revision: state.factoryRevision,
+      expected_scenario_revision: second.scenario_revision,
+      expected_lock_revision: state.lockRevision,
+      changes: feasibleChanges,
+    });
+    const secondRun = await store.simulateScenarioVersion({
+      request_id: "request-effective-b-run",
+      scenario_id: second.scenario_id,
+      expected_factory_revision: state.factoryRevision,
+      expected_scenario_revision: secondConfigured.scenario_revision,
+      expected_lock_revision: state.lockRevision,
+      horizon_shifts: 1,
+    });
+
+    const comparison = store.compareRunSet([firstRun.run_id, secondRun.run_id]);
+    expect(comparison.best_evaluated_run_id).toBe(
+      [firstRun.run_id, secondRun.run_id].sort()[0],
+    );
+    expect(store.getSnapshot().runEvidence[firstRun.run_id]?.patch).toEqual(
+      feasibleChanges,
+    );
+    expect(store.getSnapshot().runEvidence[secondRun.run_id]?.patch).toEqual(
+      feasibleChanges,
+    );
   });
 
   it("rejects changed pre-shift controls before simulation after the modeled shift has started", async () => {

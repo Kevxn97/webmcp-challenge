@@ -110,4 +110,49 @@ describe("decision packet", () => {
     expect(packet!.markdown).toContain("9252 < 10937");
     expect(packet!.markdown).toContain("Packaging locked by human");
   });
+
+  it("uses the same canonical run-id tie-break as receipt comparison", async () => {
+    const store = await readyStore();
+    const factory = store.getSnapshot();
+    const createAndRun = async (suffix: string) => {
+      const scenario = store.createScenario({
+        request_id: `packet-create-${suffix}`,
+        name: `Equivalent ${suffix}`,
+        factory_version_id: factory.factoryVersionId,
+        expected_factory_revision: factory.factoryRevision,
+        expected_lock_revision: factory.lockRevision,
+      });
+      const revised = store.applyScenarioChanges({
+        request_id: `packet-apply-${suffix}`,
+        scenario_id: scenario.scenario_id,
+        expected_factory_revision: factory.factoryRevision,
+        expected_scenario_revision: scenario.scenario_revision,
+        expected_lock_revision: factory.lockRevision,
+        changes: {
+          mixer_speed_bps: 9_500,
+          packaging_speed_bps: 9_000,
+          packaging_changeover_minutes: 15,
+          packaging_calibration: "enhanced",
+        },
+      });
+      return store.simulateScenarioVersion({
+        request_id: `packet-run-${suffix}`,
+        scenario_id: scenario.scenario_id,
+        expected_factory_revision: factory.factoryRevision,
+        expected_scenario_revision: revised.scenario_revision,
+        expected_lock_revision: factory.lockRevision,
+        horizon_shifts: 1,
+      });
+    };
+
+    const first = await createAndRun("a");
+    const second = await createAndRun("b");
+    const comparison = store.compareRunSet([first.run_id, second.run_id]);
+    const packet = JSON.parse(buildDecisionPacket(store.getSnapshot())!.json) as {
+      decision: { run_id: string };
+    };
+
+    expect(packet.decision.run_id).toBe(comparison.best_evaluated_run_id);
+    expect(packet.decision.run_id).toBe([first.run_id, second.run_id].sort()[0]);
+  });
 });

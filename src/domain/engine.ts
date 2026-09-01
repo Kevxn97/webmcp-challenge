@@ -1,5 +1,14 @@
 import { canonicalStableStringify, sha256Hex } from "./canonical";
-import { SPEED_BPS_MAX, SPEED_BPS_MIN } from "../shared/controlDefinitions";
+import {
+  CONTROL_DEFINITIONS,
+  CONTROL_OPERATION_KINDS,
+  CONTROL_RESOURCES,
+  SCENARIO_CONTROL_FIELDS,
+  controlFieldForOperationKind,
+  controlFieldsForResource,
+  expectedControlDomain,
+  isScenarioControlValue,
+} from "../shared/controlDefinitions";
 import {
   ASSET_INVENTORY,
   BASELINE_BAD_UNITS,
@@ -147,30 +156,12 @@ interface OperationContext {
   rejected: RejectedOperation[];
 }
 
-const KNOWN_RESOURCES: readonly FactoryResource[] = [
-  "Supplier",
-  "Mixer",
-  "Packaging",
-  "Quality Gate",
-  "Warehouse",
-];
+const KNOWN_RESOURCES = CONTROL_RESOURCES as readonly FactoryResource[];
 
-const KNOWN_OPERATION_KINDS = new Set([
-  "SET_MIXER_SPEED",
-  "SET_PACKAGING_SPEED",
-  "SET_CHANGEOVER_MINUTES",
-  "SET_CALIBRATION",
-  "SET_QUALITY_RATE",
-  "SET_WAREHOUSE_RATE",
-  "SET_SUPPLIER_MODE",
+const KNOWN_OPERATION_KINDS = new Set<string>([
+  ...CONTROL_OPERATION_KINDS,
   "LOCK_RESOURCE",
 ]);
-
-const CHANGEOVER_VALUES = new Set([15, 30, 45]);
-const QUALITY_RATE_VALUES = new Set([600, 700, 800, 900]);
-const WAREHOUSE_RATE_VALUES = new Set([800, 900, 1000]);
-const CALIBRATION_VALUES = new Set(["standard", "enhanced"]);
-const SUPPLIER_MODE_VALUES = new Set(["standard", "expedite"]);
 
 function compareStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -372,59 +363,25 @@ function assertInteger(value: unknown, label: string): asserts value is number {
   }
 }
 
-function assertInitialSpeed(value: unknown, label: string): asserts value is number {
-  assertInteger(value, label);
-  if (value < SPEED_BPS_MIN || value > SPEED_BPS_MAX) {
-    throw new FactoryValidationError(
-      `${label} must be between ${SPEED_BPS_MIN} and ${SPEED_BPS_MAX} bps`,
-    );
-  }
-}
-
 function normalizeControls(value: unknown): FactoryControls {
   const controls = asRecord(value);
   if (!controls) {
     throw new FactoryValidationError("controls must be an object");
   }
 
-  assertInitialSpeed(controls.mixerSpeedBps, "controls.mixerSpeedBps");
-  assertInitialSpeed(controls.packagingSpeedBps, "controls.packagingSpeedBps");
-
-  if (!CHANGEOVER_VALUES.has(controls.changeoverMinutes as number)) {
-    throw new FactoryValidationError("controls.changeoverMinutes must be 15, 30, or 45");
+  const normalized = {} as FactoryControls;
+  const mutable = normalized as unknown as Record<string, string | number>;
+  for (const field of SCENARIO_CONTROL_FIELDS) {
+    const definition = CONTROL_DEFINITIONS[field];
+    const controlValue = controls[definition.engineControlKey];
+    if (!isScenarioControlValue(field, controlValue)) {
+      throw new FactoryValidationError(
+        `controls.${definition.engineControlKey} must be ${expectedControlDomain(field)}`,
+      );
+    }
+    mutable[definition.engineControlKey] = controlValue;
   }
-  if (!CALIBRATION_VALUES.has(controls.calibration as string)) {
-    throw new FactoryValidationError(
-      "controls.calibration must be standard or enhanced",
-    );
-  }
-  if (!QUALITY_RATE_VALUES.has(controls.qualityRateUnitsPerHour as number)) {
-    throw new FactoryValidationError(
-      "controls.qualityRateUnitsPerHour must be 600, 700, 800, or 900",
-    );
-  }
-  if (!WAREHOUSE_RATE_VALUES.has(controls.warehouseRateUnitsPerHour as number)) {
-    throw new FactoryValidationError(
-      "controls.warehouseRateUnitsPerHour must be 800, 900, or 1000",
-    );
-  }
-  if (!SUPPLIER_MODE_VALUES.has(controls.supplierMode as string)) {
-    throw new FactoryValidationError(
-      "controls.supplierMode must be standard or expedite",
-    );
-  }
-
-  return {
-    mixerSpeedBps: controls.mixerSpeedBps,
-    packagingSpeedBps: controls.packagingSpeedBps,
-    changeoverMinutes: controls.changeoverMinutes as FactoryControls["changeoverMinutes"],
-    calibration: controls.calibration as FactoryControls["calibration"],
-    qualityRateUnitsPerHour:
-      controls.qualityRateUnitsPerHour as FactoryControls["qualityRateUnitsPerHour"],
-    warehouseRateUnitsPerHour:
-      controls.warehouseRateUnitsPerHour as FactoryControls["warehouseRateUnitsPerHour"],
-    supplierMode: controls.supplierMode as FactoryControls["supplierMode"],
-  };
+  return normalized;
 }
 
 function normalizeDeliveries(value: unknown): MaterialDelivery[] {
@@ -641,45 +598,13 @@ function rejection(
 }
 
 function resourceForKind(kind: string): FactoryResource | null {
-  switch (kind) {
-    case "SET_MIXER_SPEED":
-      return "Mixer";
-    case "SET_PACKAGING_SPEED":
-    case "SET_CHANGEOVER_MINUTES":
-    case "SET_CALIBRATION":
-      return "Packaging";
-    case "SET_QUALITY_RATE":
-      return "Quality Gate";
-    case "SET_WAREHOUSE_RATE":
-      return "Warehouse";
-    case "SET_SUPPLIER_MODE":
-      return "Supplier";
-    default:
-      return null;
-  }
+  const field = controlFieldForOperationKind(kind);
+  return field ? CONTROL_DEFINITIONS[field].resource : null;
 }
 
 function lockedControlPaths(resource: FactoryResource): string[] {
-  switch (resource) {
-    case "Supplier":
-      return ["supplierMode"];
-    case "Mixer":
-      return ["mixerSpeedBps"];
-    case "Packaging":
-      return ["packagingSpeedBps", "changeoverMinutes", "calibration"];
-    case "Quality Gate":
-      return ["qualityRateUnitsPerHour"];
-    case "Warehouse":
-      return ["warehouseRateUnitsPerHour"];
-  }
-}
-
-function isSpeedBps(value: unknown): value is number {
-  return (
-    typeof value === "number" &&
-    Number.isSafeInteger(value) &&
-    value >= SPEED_BPS_MIN &&
-    value <= SPEED_BPS_MAX
+  return controlFieldsForResource(resource).map(
+    (field) => CONTROL_DEFINITIONS[field].engineControlKey,
   );
 }
 
@@ -786,13 +711,15 @@ function applyOperation(
     return;
   }
 
-  const resource = resourceForKind(kind);
-  if (!resource) {
+  const field = controlFieldForOperationKind(kind);
+  if (!field) {
     context.rejected.push(
       rejection(operation, "UNKNOWN_OPERATION", `Unknown operation kind ${kind}`),
     );
     return;
   }
+  const definition = CONTROL_DEFINITIONS[field];
+  const resource = definition.resource;
   if (context.locksByResource.has(resource)) {
     context.rejected.push(
       rejection(
@@ -804,208 +731,44 @@ function applyOperation(
     );
     return;
   }
-
-  switch (kind) {
-    case "SET_MIXER_SPEED": {
-      if (!isSpeedBps(record.valueBps)) {
-        context.rejected.push(
-          rejection(
-            operation,
-            "OUT_OF_RANGE",
-            "Mixer speed must be an integer from 5000 through 10000 bps",
-            { resource },
-          ),
-        );
-        return;
-      }
-      const previous = context.controls.mixerSpeedBps;
-      context.controls.mixerSpeedBps = record.valueBps;
-      acceptSetting(context, operationId, tick, actor, kind, resource, previous, record.valueBps);
-      return;
-    }
-    case "SET_PACKAGING_SPEED": {
-      if (!isSpeedBps(record.valueBps)) {
-        context.rejected.push(
-          rejection(
-            operation,
-            "OUT_OF_RANGE",
-            "Packaging speed must be an integer from 5000 through 10000 bps",
-            { resource },
-          ),
-        );
-        return;
-      }
-      const previous = context.controls.packagingSpeedBps;
-      context.controls.packagingSpeedBps = record.valueBps;
-      acceptSetting(context, operationId, tick, actor, kind, resource, previous, record.valueBps);
-      return;
-    }
-    case "SET_CHANGEOVER_MINUTES": {
-      if (tick !== 0) {
-        context.rejected.push(
-          rejection(
-            operation,
-            "PRE_SHIFT_ONLY",
-            "Changeover may only be selected at tick 0 before the shift starts",
-            { resource },
-          ),
-        );
-        return;
-      }
-      if (!CHANGEOVER_VALUES.has(record.valueMinutes as number)) {
-        context.rejected.push(
-          rejection(
-            operation,
-            "OUT_OF_RANGE",
-            "Changeover must be 15, 30, or 45 minutes",
-            { resource },
-          ),
-        );
-        return;
-      }
-      const previous = context.controls.changeoverMinutes;
-      context.controls.changeoverMinutes =
-        record.valueMinutes as FactoryControls["changeoverMinutes"];
-      acceptSetting(
-        context,
-        operationId,
-        tick,
-        actor,
-        kind,
-        resource,
-        previous,
-        record.valueMinutes as number,
-      );
-      return;
-    }
-    case "SET_CALIBRATION": {
-      if (tick !== 0) {
-        context.rejected.push(
-          rejection(
-            operation,
-            "PRE_SHIFT_ONLY",
-            "Calibration may only be selected at tick 0 before the shift starts",
-            { resource },
-          ),
-        );
-        return;
-      }
-      if (!CALIBRATION_VALUES.has(record.value as string)) {
-        context.rejected.push(
-          rejection(
-            operation,
-            "OUT_OF_RANGE",
-            "Calibration must be standard or enhanced",
-            { resource },
-          ),
-        );
-        return;
-      }
-      const previous = context.controls.calibration;
-      context.controls.calibration = record.value as CalibrationMode;
-      acceptSetting(
-        context,
-        operationId,
-        tick,
-        actor,
-        kind,
-        resource,
-        previous,
-        record.value as string,
-      );
-      return;
-    }
-    case "SET_QUALITY_RATE": {
-      if (!QUALITY_RATE_VALUES.has(record.valueUnitsPerHour as number)) {
-        context.rejected.push(
-          rejection(
-            operation,
-            "OUT_OF_RANGE",
-            "Quality rate must be 600, 700, 800, or 900 units/hour",
-            { resource },
-          ),
-        );
-        return;
-      }
-      const previous = context.controls.qualityRateUnitsPerHour;
-      context.controls.qualityRateUnitsPerHour =
-        record.valueUnitsPerHour as FactoryControls["qualityRateUnitsPerHour"];
-      acceptSetting(
-        context,
-        operationId,
-        tick,
-        actor,
-        kind,
-        resource,
-        previous,
-        record.valueUnitsPerHour as number,
-      );
-      return;
-    }
-    case "SET_WAREHOUSE_RATE": {
-      if (!WAREHOUSE_RATE_VALUES.has(record.valueUnitsPerHour as number)) {
-        context.rejected.push(
-          rejection(
-            operation,
-            "OUT_OF_RANGE",
-            "Warehouse rate must be 800, 900, or 1000 units/hour",
-            { resource },
-          ),
-        );
-        return;
-      }
-      const previous = context.controls.warehouseRateUnitsPerHour;
-      context.controls.warehouseRateUnitsPerHour =
-        record.valueUnitsPerHour as FactoryControls["warehouseRateUnitsPerHour"];
-      acceptSetting(
-        context,
-        operationId,
-        tick,
-        actor,
-        kind,
-        resource,
-        previous,
-        record.valueUnitsPerHour as number,
-      );
-      return;
-    }
-    case "SET_SUPPLIER_MODE": {
-      if (tick !== 0) {
-        context.rejected.push(
-          rejection(
-            operation,
-            "PRE_SHIFT_ONLY",
-            "Supplier mode may only be committed at tick 0 before the shift starts",
-            { resource },
-          ),
-        );
-        return;
-      }
-      if (!SUPPLIER_MODE_VALUES.has(record.value as string)) {
-        context.rejected.push(
-          rejection(
-            operation,
-            "OUT_OF_RANGE",
-            "Supplier mode must be standard or expedite",
-            { resource },
-          ),
-        );
-        return;
-      }
-      const previous = context.controls.supplierMode;
-      context.controls.supplierMode = record.value as FactoryControls["supplierMode"];
-      acceptSetting(
-        context,
-        operationId,
-        tick,
-        actor,
-        kind,
-        resource,
-        previous,
-        record.value as string,
-      );
-    }
+  if (definition.applicationPhase === "pre_shift" && tick !== 0) {
+    context.rejected.push(
+      rejection(
+        operation,
+        "PRE_SHIFT_ONLY",
+        `${definition.label} may only be selected at tick 0 before the shift starts`,
+        { resource },
+      ),
+    );
+    return;
   }
+
+  const nextValue = record[definition.operation.valueKey];
+  if (!isScenarioControlValue(field, nextValue)) {
+    context.rejected.push(
+      rejection(
+        operation,
+        "OUT_OF_RANGE",
+        `${definition.label} must be ${expectedControlDomain(field)}`,
+        { resource },
+      ),
+    );
+    return;
+  }
+
+  const controls = context.controls as unknown as Record<string, JsonValue>;
+  const previousValue = controls[definition.engineControlKey];
+  controls[definition.engineControlKey] = nextValue;
+  acceptSetting(
+    context,
+    operationId,
+    tick,
+    actor,
+    kind,
+    resource,
+    previousValue,
+    nextValue,
+  );
 }
 
 function defectPropensityBps(controls: FactoryControls): number {

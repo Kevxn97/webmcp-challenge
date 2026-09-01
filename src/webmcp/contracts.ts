@@ -1,11 +1,5 @@
-import {
-  PACKAGING_CALIBRATIONS,
-  PACKAGING_CHANGEOVER_MINUTES,
-  QUALITY_RATES_UNITS_PER_HOUR,
-  SIMULATION_HORIZON_SHIFTS,
-  SUPPLIER_MODES,
-  WAREHOUSE_DOCK_RATES_UNITS_PER_HOUR,
-} from "./contract-constants";
+import type { ScenarioControlPatch, ScenarioControlValueMap } from "../shared/controlDefinitions";
+import { SIMULATION_HORIZON_SHIFTS } from "./contract-constants";
 
 export const FACTORY_TOOL_SCHEMA_VERSION = "factory-tools/v1" as const;
 
@@ -16,6 +10,7 @@ export const FACTORY_TOOL_CODES = [
   "LOCK_CHANGED",
   "HUMAN_LOCKED",
   "PHASE_CLOSED",
+  "WORKSPACE_FULL",
   "VALIDATION_ERROR",
   "NOT_FOUND",
   "IDEMPOTENCY_KEY_REUSED",
@@ -63,25 +58,18 @@ export interface CreateScenarioInput {
 }
 
 export type PackagingChangeoverMinutes =
-  (typeof PACKAGING_CHANGEOVER_MINUTES)[number];
-export type PackagingCalibration = (typeof PACKAGING_CALIBRATIONS)[number];
-export type SupplierMode = (typeof SUPPLIER_MODES)[number];
+  ScenarioControlValueMap["packaging_changeover_minutes"];
+export type PackagingCalibration =
+  ScenarioControlValueMap["packaging_calibration"];
+export type SupplierMode = ScenarioControlValueMap["supplier_mode"];
 export type QualityRateUnitsPerHour =
-  (typeof QUALITY_RATES_UNITS_PER_HOUR)[number];
+  ScenarioControlValueMap["quality_rate_units_per_hour"];
 export type WarehouseDockUnitsPerHour =
-  (typeof WAREHOUSE_DOCK_RATES_UNITS_PER_HOUR)[number];
+  ScenarioControlValueMap["warehouse_dock_units_per_hour"];
 export type SimulationHorizonShifts =
   (typeof SIMULATION_HORIZON_SHIFTS)[number];
 
-export interface ScenarioChanges {
-  readonly mixer_speed_bps?: number;
-  readonly packaging_speed_bps?: number;
-  readonly packaging_changeover_minutes?: PackagingChangeoverMinutes;
-  readonly packaging_calibration?: PackagingCalibration;
-  readonly supplier_mode?: SupplierMode;
-  readonly quality_rate_units_per_hour?: QualityRateUnitsPerHour;
-  readonly warehouse_dock_units_per_hour?: WarehouseDockUnitsPerHour;
-}
+export type ScenarioChanges = Readonly<ScenarioControlPatch>;
 
 export interface ApplyScenarioChangesInput {
   readonly request_id: string;

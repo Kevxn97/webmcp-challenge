@@ -200,7 +200,7 @@ Examples:
 
 `create_scenario` binds the hypothesis to the current decision epoch. UI pins A and B are presentation metadata, not durable identity.
 
-Scenario allocation must be deterministic and independent of which column the human selected. A full workspace follows a documented replacement rule or returns an explicit capacity response.
+Scenario allocation is deterministic and independent of which column the human selected: allocate the first empty pin by marker, otherwise replace the first historical head by marker, and return `WORKSPACE_FULL` without displacement when both heads are current. The factory snapshot exposes the next allocation before the write.
 
 ### 4. Apply bounded controls
 
@@ -507,7 +507,7 @@ A receipt is the evidence unit. Its compact agent projection includes:
 Allowed conceptual values:
 
 - execution: `VALID`, `INVALID_OPERATIONS`, `INVALID_INVARIANTS`;
-- currentness: `CURRENT`, `HISTORICAL`;
+- scenario-head currentness: `CURRENT`, `CURRENT_UNEVALUATED`, `HISTORICAL`; receipt currentness remains `CURRENT` or `HISTORICAL`;
 - constraints: `ALL_PASS`, `VIOLATED`;
 - proof: `NONE`, `INCONCLUSIVE_BOUND`, `PROVEN_INFEASIBLE`;
 - relation: `UNCOMPARED`, `DOMINATED`, `NON_DOMINATED`, `POLICY_WINNER`, `BEST_EVALUATED_UNDER_POLICY`, `PROVEN_OPTIMAL`.
@@ -528,7 +528,7 @@ The application preserves:
 - selection policy and justified claim level;
 - current and historical evidence.
 
-The bounded `evidence_index` lets a context-free agent recover existing work without re-simulation.
+The bounded `evidence_index` is projected from immutable source-bound run evidence rather than only active scenario heads. A context-free agent can therefore recover displaced or superseded receipts without remembering a run ID or re-running a simulation.
 
 Each entry structurally separates:
 
@@ -539,7 +539,7 @@ A label that resembles a tool instruction, revision, metric, or proof remains in
 
 ## Comparison contract
 
-The current grammar makes the first `run_id` the anchor. That ordering must be explicit in schema copy and result:
+The current grammar makes the first `run_id` the anchor. That ordering is explicit in schema copy and result, and every delta is defined as candidate minus anchor:
 
 ```json
 {

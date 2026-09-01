@@ -5,7 +5,11 @@ import {
   PACKAGING_LOCK_EFFECTIVE_TICK,
 } from "../shared/controlDefinitions";
 import type { DecisionPacketExport } from "../ui/types";
-import type { SandboxState, ScenarioRecord } from "./store";
+import {
+  runEvidenceIsCurrent,
+  type SandboxState,
+  type ScenarioRunEvidence,
+} from "./store";
 
 interface ScenarioEvidence {
   scenario_id: string;
@@ -44,63 +48,64 @@ interface ScenarioEvidence {
   };
 }
 
-function sourceIsCurrent(state: SandboxState, scenario: ScenarioRecord): boolean {
-  return scenario.sourceFactoryRevision === state.factoryRevision
-    && scenario.baseFactoryVersionId === state.factoryVersionId
-    && scenario.sourceLockRevision === state.lockRevision
-    && scenario.receiptScenarioRevision === scenario.revision
-    && scenario.receiptLockRevision === state.lockRevision;
-}
-
 function defectCompare(left: SimulationReceipt, right: SimulationReceipt): number {
   return left.rawCounters.badUnits * right.rawCounters.grossUnits
     - right.rawCounters.badUnits * left.rawCounters.grossUnits;
 }
 
 function policyCompare(
-  left: { scenario: ScenarioRecord; receipt: SimulationReceipt },
-  right: { scenario: ScenarioRecord; receipt: SimulationReceipt },
+  left: ScenarioRunEvidence,
+  right: ScenarioRunEvidence,
 ): number {
-  const output = right.receipt.rawCounters.goodOutputUnits - left.receipt.rawCounters.goodOutputUnits;
+  const output = right.receipt.rawCounters.goodOutputUnits
+    - left.receipt.rawCounters.goodOutputUnits;
   if (output !== 0) return output;
-  const cost = BigInt(left.receipt.totalCostMicroEur) - BigInt(right.receipt.totalCostMicroEur);
+  const cost = BigInt(left.receipt.totalCostMicroEur)
+    - BigInt(right.receipt.totalCostMicroEur);
   if (cost !== 0n) return cost < 0n ? -1 : 1;
   const defects = defectCompare(left.receipt, right.receipt);
   if (defects !== 0) return defects;
-  const changedControls = Object.keys(left.scenario.patch).length - Object.keys(right.scenario.patch).length;
-  return changedControls || left.scenario.id.localeCompare(right.scenario.id);
+  const changedControls = Object.keys(left.patch).length
+    - Object.keys(right.patch).length;
+  return changedControls || left.runId.localeCompare(right.runId);
 }
 
-function scenarioEvidence(state: SandboxState, scenario: ScenarioRecord): ScenarioEvidence | null {
-  const receipt = scenario.receipt;
-  if (!receipt) return null;
+function scenarioEvidence(
+  state: SandboxState,
+  evidence: ScenarioRunEvidence,
+): ScenarioEvidence {
+  const receipt = evidence.receipt;
   return {
-    scenario_id: scenario.id,
-    scenario_version_id: scenario.headVersionId,
-    display_label: scenario.name,
+    scenario_id: evidence.scenarioId,
+    scenario_version_id: evidence.scenarioVersionId,
+    display_label: evidence.scenarioName,
     label_trust: "UNTRUSTED_DISPLAY_TEXT",
-    source_is_current: sourceIsCurrent(state, scenario),
-    source_factory_revision: scenario.sourceFactoryRevision,
-    source_lock_revision: scenario.sourceLockRevision,
+    source_is_current: runEvidenceIsCurrent(evidence, state),
+    source_factory_revision: evidence.sourceFactoryRevision,
+    source_lock_revision: evidence.sourceLockRevision,
     run_id: receipt.runId,
     input_hash: receipt.inputHash,
     content_hash: receipt.contentHash,
     engine_version: receipt.engineVersion,
     feasibility: receipt.feasibilityStatus,
-    all_constraints_pass: receipt.constraints.every((constraint) => constraint.pass),
+    all_constraints_pass: receipt.constraints.every(
+      (constraint) => constraint.pass,
+    ),
     good_output_units: receipt.rawCounters.goodOutputUnits,
     gross_units: receipt.rawCounters.grossUnits,
     bad_units: receipt.rawCounters.badUnits,
     total_cost_micro_eur: receipt.totalCostMicroEur,
-    changed_controls: Object.keys(scenario.patch).sort(),
-    constraints: receipt.constraints.map(({ code, lhs, operator, rhs, unit, pass }) => ({
-      code,
-      lhs,
-      operator,
-      rhs,
-      unit,
-      pass,
-    })),
+    changed_controls: Object.keys(evidence.patch).sort(),
+    constraints: receipt.constraints.map(
+      ({ code, lhs, operator, rhs, unit, pass }) => ({
+        code,
+        lhs,
+        operator,
+        rhs,
+        unit,
+        pass,
+      }),
+    ),
     proof: receipt.upperBoundProof ? {
       proof_version: receipt.upperBoundProof.proofVersion,
       method: receipt.upperBoundProof.method,
@@ -122,38 +127,36 @@ function formatCost(microEur: string): string {
 }
 
 export function buildDecisionPacket(state: SandboxState): DecisionPacketExport | null {
-  const active = state.scenarios
-    .filter((scenario) => !scenario.placeholder && scenario.receipt)
-    .map((scenario) => ({ scenario, receipt: scenario.receipt! }));
-  if (active.length === 0 || !state.baselineReceipt) return null;
+  const storedEvidence = Object.values(state.runEvidence);
+  if (storedEvidence.length === 0 || !state.baselineReceipt) return null;
 
-  const evidence = active
-    .map(({ scenario }) => scenarioEvidence(state, scenario))
-    .filter((item): item is ScenarioEvidence => item !== null);
-  const feasibleCurrent = active.filter(({ scenario, receipt }) =>
-    sourceIsCurrent(state, scenario)
-    && receipt.feasibilityStatus === "FEASIBLE"
-    && receipt.constraints.every((constraint) => constraint.pass),
+  const evidence = storedEvidence
+    .sort((left, right) => left.runId.localeCompare(right.runId))
+    .map((item) => scenarioEvidence(state, item));
+  const feasibleCurrent = storedEvidence.filter((item) =>
+    runEvidenceIsCurrent(item, state)
+    && item.receipt.feasibilityStatus === "FEASIBLE"
+    && item.receipt.constraints.every((constraint) => constraint.pass),
   );
   const best = [...feasibleCurrent].sort(policyCompare)[0];
-  const currentProof = active.find(({ scenario, receipt }) =>
-    sourceIsCurrent(state, scenario)
-    && receipt.feasibilityStatus === "PROVEN_INFEASIBLE_UNDER_LOCKS"
-    && receipt.upperBoundProof?.proven,
+  const currentProof = storedEvidence.find((item) =>
+    runEvidenceIsCurrent(item, state)
+    && item.receipt.feasibilityStatus === "PROVEN_INFEASIBLE_UNDER_LOCKS"
+    && item.receipt.upperBoundProof?.proven,
   );
 
   const decision = best ? {
     status: "BEST_EVALUATED_UNDER_POLICY",
-    scenario_id: best.scenario.id,
-    scenario_version_id: best.scenario.headVersionId,
-    run_id: best.receipt.runId,
-    statement: `${best.scenario.name} is the best evaluated current alternative under the declared policy. This is not a global optimality claim.`,
+    scenario_id: best.scenarioId,
+    scenario_version_id: best.scenarioVersionId,
+    run_id: best.runId,
+    statement: `${best.scenarioName} is the best evaluated current alternative under the declared policy. This is not a global optimality claim.`,
     proof: null,
   } : currentProof ? {
     status: "PROVEN_INFEASIBLE_UNDER_HUMAN_AUTHORITY",
-    scenario_id: currentProof.scenario.id,
-    scenario_version_id: currentProof.scenario.headVersionId,
-    run_id: currentProof.receipt.runId,
+    scenario_id: currentProof.scenarioId,
+    scenario_version_id: currentProof.scenarioVersionId,
+    run_id: currentProof.runId,
     statement: "The current mission is proven infeasible under the human Packaging authority boundary and modeled lock timing.",
     proof: currentProof.receipt.upperBoundProof?.exactInequality ?? null,
   } : {
@@ -182,7 +185,7 @@ export function buildDecisionPacket(state: SandboxState): DecisionPacketExport |
         "MIN_TOTAL_COST",
         "MIN_DEFECT_RATE",
         "MIN_CHANGED_CONTROLS",
-        "CANONICAL_ID",
+        "CANONICAL_RUN_ID",
       ],
     },
     authority: {

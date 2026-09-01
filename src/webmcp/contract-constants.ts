@@ -1,4 +1,9 @@
-import { SPEED_BPS_MAX, SPEED_BPS_MIN } from "../shared/controlDefinitions";
+import {
+  CONTROL_DEFINITIONS,
+  SCENARIO_CONTROL_FIELDS,
+} from "../shared/controlDefinitions";
+export { SIMULATION_HORIZON_SHIFTS } from "../shared/simulationContract";
+import { SIMULATION_HORIZON_SHIFTS } from "../shared/simulationContract";
 
 export const REQUEST_ID_CONSTRAINTS = {
   minLength: 1,
@@ -24,16 +29,19 @@ export const REVISION_CONSTRAINTS = {
 } as const;
 
 export const SPEED_BPS_CONSTRAINTS = {
-  minimum: SPEED_BPS_MIN,
-  maximum: SPEED_BPS_MAX,
+  minimum: CONTROL_DEFINITIONS.mixer_speed_bps.domain.minimum,
+  maximum: CONTROL_DEFINITIONS.mixer_speed_bps.domain.maximum,
 } as const;
 
-export const PACKAGING_CHANGEOVER_MINUTES = [15, 30, 45] as const;
-export const PACKAGING_CALIBRATIONS = ["standard", "enhanced"] as const;
-export const SUPPLIER_MODES = ["standard", "expedite"] as const;
-export const QUALITY_RATES_UNITS_PER_HOUR = [600, 700, 800, 900] as const;
-export const WAREHOUSE_DOCK_RATES_UNITS_PER_HOUR = [800, 900, 1000] as const;
-export const SIMULATION_HORIZON_SHIFTS = [1] as const;
+export const PACKAGING_CHANGEOVER_MINUTES =
+  CONTROL_DEFINITIONS.packaging_changeover_minutes.domain.values;
+export const PACKAGING_CALIBRATIONS =
+  CONTROL_DEFINITIONS.packaging_calibration.domain.values;
+export const SUPPLIER_MODES = CONTROL_DEFINITIONS.supplier_mode.domain.values;
+export const QUALITY_RATES_UNITS_PER_HOUR =
+  CONTROL_DEFINITIONS.quality_rate_units_per_hour.domain.values;
+export const WAREHOUSE_DOCK_RATES_UNITS_PER_HOUR =
+  CONTROL_DEFINITIONS.warehouse_dock_units_per_hour.domain.values;
 
 export const COMPARE_RUN_IDS_CONSTRAINTS = {
   minItems: 2,
@@ -50,15 +58,7 @@ export const CREATE_SCENARIO_FIELDS = [
   "expected_factory_revision",
   "expected_lock_revision",
 ] as const;
-export const SCENARIO_CHANGE_FIELDS = [
-  "mixer_speed_bps",
-  "packaging_speed_bps",
-  "packaging_changeover_minutes",
-  "packaging_calibration",
-  "supplier_mode",
-  "quality_rate_units_per_hour",
-  "warehouse_dock_units_per_hour",
-] as const;
+export const SCENARIO_CHANGE_FIELDS = SCENARIO_CONTROL_FIELDS;
 export const SCENARIO_CHANGE_REQUIRED_FIELDS = [] as const;
 export const APPLY_SCENARIO_CHANGES_FIELDS = [
   "request_id",

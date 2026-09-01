@@ -1,31 +1,29 @@
+import type {
+  CONTROL_DEFINITIONS,
+  ControlResource,
+  EngineControlValueMap,
+  ScenarioControlField,
+  ScenarioControlValueMap,
+} from "../shared/controlDefinitions";
+import { TICK_MINUTES, TOTAL_TICKS } from "../shared/simulationContract";
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 export interface JsonObject {
   [key: string]: JsonValue;
 }
 
-export type CalibrationMode = "standard" | "enhanced";
-export type SupplierMode = "standard" | "expedite";
-export type ChangeoverMinutes = 15 | 30 | 45;
-export type QualityRate = 600 | 700 | 800 | 900;
-export type WarehouseRate = 800 | 900 | 1000;
+export type CalibrationMode = ScenarioControlValueMap["packaging_calibration"];
+export type SupplierMode = ScenarioControlValueMap["supplier_mode"];
+export type ChangeoverMinutes =
+  ScenarioControlValueMap["packaging_changeover_minutes"];
+export type QualityRate =
+  ScenarioControlValueMap["quality_rate_units_per_hour"];
+export type WarehouseRate =
+  ScenarioControlValueMap["warehouse_dock_units_per_hour"];
 
-export type FactoryResource =
-  | "Supplier"
-  | "Mixer"
-  | "Packaging"
-  | "Quality Gate"
-  | "Warehouse";
-
-export interface FactoryControls {
-  mixerSpeedBps: number;
-  packagingSpeedBps: number;
-  changeoverMinutes: ChangeoverMinutes;
-  calibration: CalibrationMode;
-  qualityRateUnitsPerHour: QualityRate;
-  warehouseRateUnitsPerHour: WarehouseRate;
-  supplierMode: SupplierMode;
-}
+export type FactoryResource = ControlResource;
+export type FactoryControls = EngineControlValueMap;
 
 export interface MaterialDelivery {
   deliveryId: string;
@@ -41,32 +39,28 @@ interface OperationBase {
   actor: OperationActor;
 }
 
+type ControlOperation<Field extends ScenarioControlField> =
+  OperationBase &
+  {
+    kind: (typeof CONTROL_DEFINITIONS)[Field]["operation"]["kind"];
+  } &
+  {
+    [ValueKey in (typeof CONTROL_DEFINITIONS)[Field]["operation"]["valueKey"]]:
+      ScenarioControlValueMap[Field];
+  };
+
+type FactoryControlOperation = {
+  [Field in ScenarioControlField]: ControlOperation<Field>;
+}[ScenarioControlField];
+
 export type FactoryOperation =
-  | (OperationBase & { kind: "SET_MIXER_SPEED"; valueBps: number })
-  | (OperationBase & { kind: "SET_PACKAGING_SPEED"; valueBps: number })
-  | (OperationBase & {
-      kind: "SET_CHANGEOVER_MINUTES";
-      valueMinutes: ChangeoverMinutes;
-    })
-  | (OperationBase & {
-      kind: "SET_CALIBRATION";
-      value: CalibrationMode;
-    })
-  | (OperationBase & {
-      kind: "SET_QUALITY_RATE";
-      valueUnitsPerHour: QualityRate;
-    })
-  | (OperationBase & {
-      kind: "SET_WAREHOUSE_RATE";
-      valueUnitsPerHour: WarehouseRate;
-    })
-  | (OperationBase & { kind: "SET_SUPPLIER_MODE"; value: SupplierMode })
+  | FactoryControlOperation
   | (OperationBase & { kind: "LOCK_RESOURCE"; resource: FactoryResource });
 
 export interface FactorySimulationInput {
   inputVersion: "factory-input/v1";
-  tickMinutes: 15;
-  totalTicks: 64;
+  tickMinutes: typeof TICK_MINUTES;
+  totalTicks: typeof TOTAL_TICKS;
   controls: FactoryControls;
   deliveries: readonly MaterialDelivery[];
   operations: readonly FactoryOperation[];
@@ -308,8 +302,8 @@ export interface SimulationReceipt {
   runId: string;
   contentHash: string;
   inputSnapshot: JsonObject;
-  tickMinutes: 15;
-  totalTicks: 64;
+  tickMinutes: typeof TICK_MINUTES;
+  totalTicks: typeof TOTAL_TICKS;
   unitMassGrams: number;
   rawCounters: RawCounters;
   ticks: readonly TickSnapshot[];

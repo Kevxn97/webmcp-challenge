@@ -118,6 +118,16 @@ describe("factory WebMCP schemas", () => {
     expect(namePattern.test("Scenario B ")).toBe(false);
     expect(namePattern.test("Scenario\nB")).toBe(false);
 
+    const compare = descriptors.find(
+      (item) => item.name === "compare_simulation_runs",
+    );
+    expect(compare?.description).toContain("first run_id is the anchor");
+    expect(compare?.description).toContain("candidate minus anchor");
+    expect(compare?.inputSchema.properties.run_ids.description).toContain(
+      "first item is the anchor",
+    );
+    expect(create?.description).toContain("WORKSPACE_FULL");
+
     expect(FACTORY_TOOL_NAMES.some((name) => /lock|unlock|force/.test(name))).toBe(false);
   });
 });

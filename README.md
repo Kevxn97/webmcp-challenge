@@ -85,12 +85,12 @@ The top-level page registers exactly six imperative tools through `document.mode
 
 | Tool | Kind | Agent question |
 | --- | --- | --- |
-| `get_factory_snapshot` | Read | What decision context, mission, locks, baseline, bottlenecks, and scenario heads exist now? |
+| `get_factory_snapshot` | Read | What decision context, mission, locks, baseline, evidence, scenario heads, and next deterministic workspace allocation exist now? |
 | `get_scenario_snapshot` | Read | What exact scenario head and receipt exist, and is the source still current? |
-| `create_scenario` | Write | Create a named planning branch from the expected factory and lock revisions. |
+| `create_scenario` | Write | Create a clean branch in the first empty or historical pin; fail with `WORKSPACE_FULL` rather than displacing a current head. |
 | `apply_scenario_changes` | Write | Atomically commit bounded absolute settings to the expected scenario head. |
 | `run_factory_simulation` | Write | Run and store one deterministic 16-hour, 64-tick shift receipt. |
-| `compare_simulation_runs` | Read | Compare two to four immutable receipts using exact deltas and constraints. |
+| `compare_simulation_runs` | Read | Compare two to four immutable receipts; the first run is the anchor and deltas are candidate minus anchor. |
 
 There is deliberately no `lock`, `unlock`, `force`, `approve`, arbitrary patch, optimizer, or machine-control tool. Human locks exist only in the visible interface.
 

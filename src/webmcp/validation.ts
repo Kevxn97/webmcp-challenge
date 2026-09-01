@@ -1,3 +1,8 @@
+import {
+  SCENARIO_CONTROL_FIELDS,
+  expectedControlDomain,
+  isScenarioControlValue,
+} from "../shared/controlDefinitions";
 import type {
   ApplyScenarioChangesInput,
   CompareSimulationRunsInput,
@@ -14,21 +19,14 @@ import {
   CREATE_SCENARIO_FIELDS,
   GET_FACTORY_SNAPSHOT_FIELDS,
   GET_SCENARIO_SNAPSHOT_FIELDS,
-  PACKAGING_CALIBRATIONS,
-  PACKAGING_CHANGEOVER_MINUTES,
-  QUALITY_RATES_UNITS_PER_HOUR,
   REQUEST_ID_CONSTRAINTS,
   RESOURCE_ID_CONSTRAINTS,
   REVISION_CONSTRAINTS,
   RUN_FACTORY_SIMULATION_FIELDS,
   SCENARIO_CHANGES_MIN_PROPERTIES,
-  SCENARIO_CHANGE_FIELDS,
   SCENARIO_CHANGE_REQUIRED_FIELDS,
   SCENARIO_NAME_CONSTRAINTS,
   SIMULATION_HORIZON_SHIFTS,
-  SPEED_BPS_CONSTRAINTS,
-  SUPPLIER_MODES,
-  WAREHOUSE_DOCK_RATES_UNITS_PER_HOUR,
 } from "./contract-constants";
 
 export type ValidationResult<T> =
@@ -196,23 +194,6 @@ function validateRevision(value: unknown, path: string, issues: string[]): void 
   }
 }
 
-function validateIntegerRange(
-  value: unknown,
-  minimum: number,
-  maximum: number,
-  path: string,
-  issues: string[],
-): void {
-  if (
-    typeof value !== "number" ||
-    !Number.isInteger(value) ||
-    value < minimum ||
-    value > maximum
-  ) {
-    issues.push(`${path} must be an integer from ${minimum} to ${maximum}.`);
-  }
-}
-
 function validateNumberEnum(
   value: unknown,
   choices: readonly number[],
@@ -224,17 +205,6 @@ function validateNumberEnum(
     !Number.isInteger(value) ||
     !choices.includes(value)
   ) {
-    issues.push(`${path} must be one of: ${choices.join(", ")}.`);
-  }
-}
-
-function validateStringEnum(
-  value: unknown,
-  choices: readonly string[],
-  path: string,
-  issues: string[],
-): void {
-  if (typeof value !== "string" || !choices.includes(value)) {
     issues.push(`${path} must be one of: ${choices.join(", ")}.`);
   }
 }
@@ -424,7 +394,7 @@ export function validateCreateScenarioInput(
 function validateScenarioChanges(input: unknown): ValidationResult<ScenarioChanges> {
   const shape = validateShape(
     input,
-    SCENARIO_CHANGE_FIELDS,
+    SCENARIO_CONTROL_FIELDS,
     SCENARIO_CHANGE_REQUIRED_FIELDS,
     "input.changes",
   );
@@ -439,63 +409,13 @@ function validateScenarioChanges(input: unknown): ValidationResult<ScenarioChang
     );
   }
 
-  if (hasOwn(record, "mixer_speed_bps")) {
-    validateIntegerRange(
-      record.mixer_speed_bps,
-      SPEED_BPS_CONSTRAINTS.minimum,
-      SPEED_BPS_CONSTRAINTS.maximum,
-      "input.changes.mixer_speed_bps",
-      shape.issues,
-    );
-  }
-  if (hasOwn(record, "packaging_speed_bps")) {
-    validateIntegerRange(
-      record.packaging_speed_bps,
-      SPEED_BPS_CONSTRAINTS.minimum,
-      SPEED_BPS_CONSTRAINTS.maximum,
-      "input.changes.packaging_speed_bps",
-      shape.issues,
-    );
-  }
-  if (hasOwn(record, "packaging_changeover_minutes")) {
-    validateNumberEnum(
-      record.packaging_changeover_minutes,
-      PACKAGING_CHANGEOVER_MINUTES,
-      "input.changes.packaging_changeover_minutes",
-      shape.issues,
-    );
-  }
-  if (hasOwn(record, "packaging_calibration")) {
-    validateStringEnum(
-      record.packaging_calibration,
-      PACKAGING_CALIBRATIONS,
-      "input.changes.packaging_calibration",
-      shape.issues,
-    );
-  }
-  if (hasOwn(record, "supplier_mode")) {
-    validateStringEnum(
-      record.supplier_mode,
-      SUPPLIER_MODES,
-      "input.changes.supplier_mode",
-      shape.issues,
-    );
-  }
-  if (hasOwn(record, "quality_rate_units_per_hour")) {
-    validateNumberEnum(
-      record.quality_rate_units_per_hour,
-      QUALITY_RATES_UNITS_PER_HOUR,
-      "input.changes.quality_rate_units_per_hour",
-      shape.issues,
-    );
-  }
-  if (hasOwn(record, "warehouse_dock_units_per_hour")) {
-    validateNumberEnum(
-      record.warehouse_dock_units_per_hour,
-      WAREHOUSE_DOCK_RATES_UNITS_PER_HOUR,
-      "input.changes.warehouse_dock_units_per_hour",
-      shape.issues,
-    );
+  for (const field of SCENARIO_CONTROL_FIELDS) {
+    if (!hasOwn(record, field)) continue;
+    if (!isScenarioControlValue(field, record[field])) {
+      shape.issues.push(
+        `input.changes.${field} must be ${expectedControlDomain(field)}.`,
+      );
+    }
   }
 
   if (shape.issues.length > 0) {
@@ -503,39 +423,11 @@ function validateScenarioChanges(input: unknown): ValidationResult<ScenarioChang
   }
 
   const changes = Object.create(null) as Mutable<ScenarioChanges>;
-  if (hasOwn(record, "mixer_speed_bps")) {
-    changes.mixer_speed_bps = record.mixer_speed_bps as number;
-  }
-  if (hasOwn(record, "packaging_speed_bps")) {
-    changes.packaging_speed_bps = record.packaging_speed_bps as number;
-  }
-  if (hasOwn(record, "packaging_changeover_minutes")) {
-    changes.packaging_changeover_minutes =
-      record.packaging_changeover_minutes as NonNullable<
-        ScenarioChanges["packaging_changeover_minutes"]
-      >;
-  }
-  if (hasOwn(record, "packaging_calibration")) {
-    changes.packaging_calibration = record.packaging_calibration as NonNullable<
-      ScenarioChanges["packaging_calibration"]
-    >;
-  }
-  if (hasOwn(record, "supplier_mode")) {
-    changes.supplier_mode = record.supplier_mode as NonNullable<
-      ScenarioChanges["supplier_mode"]
-    >;
-  }
-  if (hasOwn(record, "quality_rate_units_per_hour")) {
-    changes.quality_rate_units_per_hour =
-      record.quality_rate_units_per_hour as NonNullable<
-        ScenarioChanges["quality_rate_units_per_hour"]
-      >;
-  }
-  if (hasOwn(record, "warehouse_dock_units_per_hour")) {
-    changes.warehouse_dock_units_per_hour =
-      record.warehouse_dock_units_per_hour as NonNullable<
-        ScenarioChanges["warehouse_dock_units_per_hour"]
-      >;
+  const mutableChanges = changes as Record<string, unknown>;
+  for (const field of SCENARIO_CONTROL_FIELDS) {
+    if (hasOwn(record, field)) {
+      mutableChanges[field] = record[field];
+    }
   }
   return valid(frozen(changes));
 }
